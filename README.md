@@ -253,4 +253,5 @@ For issues and questions:
 
 # 11. Reference
 
-https://github.com/modelcontextprotocol/python-sdk
+- https://github.com/modelcontextprotocol/python-sdk
+- https://github.com/modelcontextprotocol/servers
