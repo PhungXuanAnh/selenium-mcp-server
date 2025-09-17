@@ -1,19 +1,12 @@
+---
+mode: agent
+---
+
 # Publishing a Python Package to PyPI: Complete Guide
 
 This document provides a comprehensive step-by-step guide for publishing Python packages to the Python Package Index (PyPI).
 
-## Table of Contents
-
-- [Prerequisites](#prerequisites)
-- [Project Structure](#project-structure)
-- [Configuration Files](#configuration-files)
-- [Building the Package](#building-the-package)
-- [Setting Up PyPI Account](#setting-up-pypi-account)
-- [Publishing to PyPI](#publishing-to-pypi)
-- [Testing Your Package](#testing-your-package)
-- [Version Management](#version-management)
-- [Troubleshooting](#troubleshooting)
-- [Best Practices](#best-practices)
+This project is published to https://pypi.org/project/mcp-server-selenium/
 
 ## Prerequisites
 
