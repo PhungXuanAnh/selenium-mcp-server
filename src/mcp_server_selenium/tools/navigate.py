@@ -2,7 +2,7 @@ import logging
 import time
 from venv import logger
 from selenium.common.exceptions import TimeoutException
-from mcp_server_selenium.server import mcp, ensure_driver_initialized
+from mcp_server_selenium.server import mcp, ensure_driver_initialized, start_chrome, initialize_driver
 
 logger = logging.getLogger(__name__)
 

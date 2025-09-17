@@ -9,6 +9,7 @@ from mcp_server_selenium.tools import screenshot
 from mcp_server_selenium.tools import page_ready
 from mcp_server_selenium.tools import logs
 from mcp_server_selenium.tools import local_storage
+from mcp_server_selenium.tools import element_interaction
 
 
 LOGGING_CONFIG = {
