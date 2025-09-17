@@ -22,13 +22,17 @@
           "DATABASE_URI": "postgresql://postgres:showheroes@localhost:5432/viralize"
         }
       },
-    "selenium": {
+    "selenium-direct": {
         "command": "/home/xuananh/repo/selenium-mcp-server/.venv/bin/python",
         "args": [
-            "/home/xuananh/repo/mcp-server/src/selenium/main.py",
+            "-m",
+            "mcp_server_selenium",
             "--user_data_dir=/home/xuananh/.config/google-chrome-selenium-mcp",
             "--port=9225"
-        ]
-    } 
+        ],
+        "env": {
+          "PYTHONPATH": "/home/xuananh/repo/selenium-mcp-server/src"
+        }
+    }
   }
 }
