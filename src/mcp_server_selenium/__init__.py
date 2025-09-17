@@ -11,6 +11,7 @@ from mcp_server_selenium.tools import logs
 from mcp_server_selenium.tools import local_storage
 from mcp_server_selenium.tools import element_interaction
 from mcp_server_selenium.tools import script
+from mcp_server_selenium.tools import style
 
 
 LOGGING_CONFIG = {

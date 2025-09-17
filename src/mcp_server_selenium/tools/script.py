@@ -1,6 +1,5 @@
 import json
 import logging
-from typing import Any, Union
 from mcp_server_selenium.server import mcp, ensure_driver_initialized
 
 logger = logging.getLogger(__name__)
@@ -27,7 +26,6 @@ def run_javascript_in_console(javascript_code: str) -> str:
         it will be converted to a string. If there's an error, the error message
         will be returned.
     """
-    global driver
     try:
         driver = ensure_driver_initialized()
     except RuntimeError as e:
@@ -74,7 +72,6 @@ def run_javascript_and_get_console_output(javascript_code: str) -> str:
     Returns:
         A formatted string containing both the execution result and any console output.
     """
-    global driver
     try:
         driver = ensure_driver_initialized()
     except RuntimeError as e:
