@@ -3,6 +3,11 @@ import logging
 from logging.config import dictConfig
 from .server import driver, mcp
 
+# Import tools to register them with FastMCP
+from mcp_server_selenium.tools import navigate
+from mcp_server_selenium.tools import screenshot
+from mcp_server_selenium.tools import page_ready
+
 
 LOGGING_CONFIG = {
     "version": 1,
