@@ -62,7 +62,6 @@ PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/ch
     - [8.1.1. Installation-Related Issues](#811-installation-related-issues)
     - [8.1.2. Runtime Issues](#812-runtime-issues)
     - [8.1.3. Configuration Issues](#813-configuration-issues)
-  - [8.2. Debug Mode](#82-debug-mode)
 - [9. Architecture](#9-architecture)
 - [10. Contributing](#10-contributing)
 - [11. Support](#11-support)
@@ -72,14 +71,17 @@ PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/ch
 
 # 2. Features
 
-- **Web Navigation**: Navigate to URLs and control browser navigation
-- **Element Interaction**: Click buttons, fill forms, and interact with page elements
-- **Screenshots**: Capture screenshots of web pages
-- **Page Analysis**: Get page content, titles, and element information
-- **Form Handling**: Submit forms and interact with input fields
-- **JavaScript Execution**: Execute custom JavaScript code in the browser console
-- **Waiting Strategies**: Wait for elements to load or become clickable
-- **Chrome Browser Control**: Connect to existing Chrome instances or start new ones
+- **Web Navigation**: Navigate to URLs with timeout control and page readiness checking
+- **Element Discovery & Interaction**: Find elements by multiple criteria (text, class, ID, attributes, XPath) and interact with them through clicking and input value setting
+- **Advanced Element Querying**: Get single elements, multiple elements with pagination, and direct child nodes with comprehensive filtering options
+- **Screenshots**: Capture full-page screenshots of the current browser window
+- **Element Styling**: Retrieve CSS styles and computed style information for any element
+- **JavaScript Execution**: Execute custom JavaScript code in browser console with optional console output capture
+- **Browser Logging**: Access console logs (with level filtering) and network request logs (with URL filtering and error filtering)
+- **Local Storage Management**: Complete CRUD operations for browser local storage (add, read, update, delete)
+- **iFrame Support**: Work with elements inside iframes using iframe ID or name targeting
+- **XPath Support**: Use XPath expressions for precise element targeting
+- **Chrome Browser Control**: Connect to existing Chrome instances or automatically start new ones
 
 # 3. Available Tools
 
@@ -338,27 +340,6 @@ If you open the `.vscode/mcp.json` file, you can see the MCP server status at th
 - In VS Code: Open Command Palette → "Developer: Show Logs..." → "MCP: selenium"
 - Check log file: `tail -f /tmp/selenium-mcp.log`
 
-**Common Debug Commands:**
-
-For installed package:
-```bash
-# Test if package is installed correctly
-python -c "import mcp_server_selenium; print('Package imported successfully')"
-
-# Run with maximum verbosity
-python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/test-chrome -vv
-```
-
-For source code:
-```bash
-# Test module import from source
-cd /path/to/selenium-mcp-server
-PYTHONPATH=src python -c "import mcp_server_selenium; print('Module imported successfully')"
-
-# Run with maximum verbosity
-PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/test-chrome -vv
-```
-
 # 6. Examples
 
 ## 6.1. Basic Web Automation
@@ -479,19 +460,6 @@ PYTHONPATH=src python -m mcp_server_selenium
 - For source code: Ensure PYTHONPATH environment variable is set
 - For installed package: Ensure the package is installed in the same Python environment as the MCP client
 - Check MCP client logs for detailed error messages
-
-## 8.2. Debug Mode
-
-**Installed Package:**
-```bash
-python -m mcp_server_selenium -vv --port 9222 --user_data_dir /tmp/debug-chrome
-```
-
-**Source Code:**
-```bash
-cd /path/to/selenium-mcp-server
-PYTHONPATH=src python -m mcp_server_selenium -vv --port 9222 --user_data_dir /tmp/debug-chrome
-```
 
 # 9. Architecture
 
