@@ -7,9 +7,7 @@ This module provides tools for finding and interacting with web page elements.
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional
 
-from mcp.server.fastmcp import FastMCP
 from selenium.webdriver.common.by import By
 
 # Import the global mcp instance from the main server module

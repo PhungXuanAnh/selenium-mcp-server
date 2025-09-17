@@ -49,6 +49,7 @@ PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/ch
 - [5. Examples](#5-examples)
   - [5.1. Basic Web Automation](#51-basic-web-automation)
   - [5.2. Advanced Usage](#52-advanced-usage)
+    - [JavaScript Examples](#javascript-examples)
 - [6. Logging](#6-logging)
 - [7. Troubleshooting](#7-troubleshooting)
   - [7.1. Common Issues](#71-common-issues)
@@ -59,7 +60,8 @@ PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/ch
 - [8. Architecture](#8-architecture)
 - [9. Contributing](#9-contributing)
 - [10. Support](#10-support)
-- [11. Reference](#11-reference)
+- [11. Documentation](#11-documentation)
+- [12. Reference](#12-reference)
 
 
 # 1. Features
@@ -69,6 +71,7 @@ PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/ch
 - **Screenshots**: Capture screenshots of web pages
 - **Page Analysis**: Get page content, titles, and element information
 - **Form Handling**: Submit forms and interact with input fields
+- **JavaScript Execution**: Execute custom JavaScript code in the browser console
 - **Waiting Strategies**: Wait for elements to load or become clickable
 - **Chrome Browser Control**: Connect to existing Chrome instances or start new ones
 
@@ -90,6 +93,8 @@ The MCP server provides the following tools:
 - `wait_for_element(selector, by_type, timeout, condition)` - Wait for elements
 - `get_element_attribute(selector, attribute, by_type, wait_time)` - Get element attributes
 - `check_element_exists(selector, by_type, wait_time)` - Check if elements exist
+- `run_javascript_in_console(javascript_code)` - Execute JavaScript code in the browser console
+- `run_javascript_and_get_console_output(javascript_code)` - Execute JavaScript and capture console output
 
 # 3. Installation
 
@@ -212,7 +217,6 @@ mcp dev python -m mcp_server_selenium
 ### 4.2.2. Access Inspector Interface
 
 Open your browser and navigate to: http://127.0.0.1:6274/#tools
-
 ![](/images/image.png)
 
 Check logs:
@@ -357,11 +361,59 @@ PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/te
    - Tool: `click_element`
    - Selector: `button[type="submit"]`
 
+5. **Execute JavaScript**:
+   - Tool: `run_javascript_in_console`
+   - Code: `return document.title;`
+   - Result: Returns the page title
+
+6. **JavaScript with console output**:
+   - Tool: `run_javascript_and_get_console_output`
+   - Code: `console.log('Hello from browser'); return window.location.href;`
+   - Result: Shows both console output and return value
+
 ## 5.2. Advanced Usage
 
 - **Wait for dynamic content**: Use `wait_for_element` to wait for elements to load
 - **Get page information**: Use `get_page_title`, `get_current_url`, `get_page_content`
 - **Element inspection**: Use `get_element_text`, `get_element_attribute`, `check_element_exists`
+- **JavaScript automation**: Use `run_javascript_in_console` for complex DOM manipulation and data extraction
+- **JavaScript debugging**: Use `run_javascript_and_get_console_output` to capture console logs for debugging
+
+### JavaScript Examples
+
+**Extract page data**:
+```javascript
+// Tool: run_javascript_in_console
+var links = Array.from(document.querySelectorAll('a')).slice(0, 5).map(a => ({
+    text: a.textContent.trim(),
+    href: a.href
+}));
+return links;
+```
+
+**Page performance monitoring**:
+```javascript
+// Tool: run_javascript_and_get_console_output
+console.time('Page Analysis');
+var stats = {
+    title: document.title,
+    links: document.querySelectorAll('a').length,
+    images: document.querySelectorAll('img').length,
+    scripts: document.querySelectorAll('script').length
+};
+console.timeEnd('Page Analysis');
+console.log('Page stats:', stats);
+return stats;
+```
+
+**Form automation**:
+```javascript
+// Tool: run_javascript_in_console
+document.querySelector('#username').value = 'testuser';
+document.querySelector('#password').value = 'password123';
+document.querySelector('#login-form').submit();
+return 'Form submitted successfully';
+```
 
 # 6. Logging
 
@@ -398,6 +450,8 @@ PYTHONPATH=src python -m mcp_server_selenium
 2. **Port conflicts**: Use a different port with `--port` option
 3. **Permission errors**: Ensure the user data directory is writable
 4. **Element not found**: Increase wait times or use more specific selectors
+5. **JavaScript execution errors**: Check browser console for syntax errors or security restrictions
+6. **Console output not captured**: Ensure the JavaScript code runs successfully before checking console logs
 
 ### Configuration Issues
 
@@ -442,7 +496,13 @@ For issues and questions:
 - Check the logs at `/tmp/selenium-mcp.log`
 - Use verbose logging for debugging
 
-# 11. Reference
+# 11. Documentation
+
+For detailed documentation on specific features:
+- [JavaScript Console Tools](docs/javascript_console_tools.md) - Comprehensive guide for JavaScript execution tools
+- [Examples](examples/javascript_console_examples.py) - JavaScript execution examples and use cases
+
+# 12. Reference
 
 - https://github.com/modelcontextprotocol/python-sdk
 - https://github.com/modelcontextprotocol/servers
