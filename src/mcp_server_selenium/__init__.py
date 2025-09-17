@@ -7,6 +7,7 @@ from .server import driver, mcp
 from mcp_server_selenium.tools import navigate
 from mcp_server_selenium.tools import screenshot
 from mcp_server_selenium.tools import page_ready
+from mcp_server_selenium.tools import logs
 
 
 LOGGING_CONFIG = {
