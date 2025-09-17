@@ -1,20 +1,15 @@
-import json
 import logging
 import socket
 import subprocess
 import time
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Optional
 from urllib.parse import urlparse
 
 from mcp.server.fastmcp import FastMCP
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
 
 logger = logging.getLogger(__name__)
 
