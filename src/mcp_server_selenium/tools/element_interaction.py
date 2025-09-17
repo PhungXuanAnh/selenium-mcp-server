@@ -219,6 +219,260 @@ def get_an_element(text: str = '', class_name: str = '', id: str = '', attribute
 
 
 @mcp.tool()
+def get_direct_children(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', return_html: bool = False, xpath: str = '', page: int = 1, page_size: int = 5) -> str:
+    """Get all direct child nodes of an element identified by text content, class name, or ID.
+    
+    This tool finds an element based on specified criteria and returns all its direct child nodes with pagination support.
+    At least one of text, class_name, id, attributes, element_type, or xpath must be provided for the parent element.
+    
+    Args:
+        text: Text content of the parent element to find. Case-sensitive text matching.
+        class_name: CSS class name of the parent element to find.
+        id: ID attribute of the parent element to find.
+        attributes: Dictionary of attribute name-value pairs to match (e.g. {'data-test': 'button'}).
+        element_type: HTML element type to find (e.g. 'div', 'input', 'h1', 'button', etc.).
+        in_iframe_id: ID of the iframe to search within. If provided, the function will switch to this iframe before searching.
+        in_iframe_name: Name of the iframe to search within. If provided and in_iframe_id is not provided, the function will switch to this iframe before searching.
+        return_html: Return the HTML content of the child elements instead of JSON information.
+        xpath: Direct XPath selector to find the parent element. When provided, other selection criteria are ignored.
+        page: Current page of child elements returned in the response (default: 1).
+        page_size: Number of child elements to return in the response (default: 5).
+    
+    Returns:
+        A JSON string with information about the direct child elements or an error message.
+        If return_html is True, returns the HTML content of the child elements.
+    """
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        return f"Failed to initialize WebDriver: {str(e)}"
+    
+    if text == '' and class_name == '' and id == '' and not attributes and element_type == '' and xpath == '':
+        return "Error: At least one of text, class_name, id, attributes, element_type, or xpath must be provided"
+    
+    # Validate pagination parameters
+    if page < 1:
+        return "Error: Page must be at least 1"
+    if page_size < 1:
+        return "Error: Page size must be at least 1"
+    
+    try:
+        # First, find the parent element using get_an_element
+        parent_element_info = get_an_element(text, class_name, id, attributes, element_type, 
+                                           in_iframe_id, in_iframe_name, False, xpath)
+        
+        # Parse the JSON result to get parent element information
+        try:
+            parent_data = json.loads(parent_element_info)
+            
+            # Check if the parent element was found
+            if not isinstance(parent_data, dict) or not parent_data.get("found", False):
+                return parent_element_info  # Return the error message from get_an_element
+                
+            parent_xpath = parent_data.get("xpath", "")
+            parent_iframe_id = parent_data.get("in_iframe_id", "")
+            parent_iframe_name = parent_data.get("in_iframe_name", "")
+            
+        except json.JSONDecodeError:
+            # get_an_element returned an error message, not JSON
+            return parent_element_info
+        
+        # Remember the original context to switch back later
+        original_context = True
+        
+        # Switch to iframe if specified
+        if parent_iframe_id or parent_iframe_name:
+            logger.info(f"Switching to iframe with id='{parent_iframe_id}' or name='{parent_iframe_name}'")
+            try:
+                if parent_iframe_id:
+                    iframe = driver.find_element(By.ID, parent_iframe_id)
+                    driver.switch_to.frame(iframe)
+                    logger.info(f"Successfully switched to iframe with id='{parent_iframe_id}'")
+                elif parent_iframe_name:
+                    driver.switch_to.frame(parent_iframe_name)
+                    logger.info(f"Successfully switched to iframe with name='{parent_iframe_name}'")
+                original_context = False
+            except Exception as iframe_e:
+                error_msg = f"Error switching to iframe: {str(iframe_e)}"
+                logger.error(error_msg)
+                return error_msg
+        
+        # Find the parent element
+        parent_element = driver.find_element(By.XPATH, parent_xpath)
+        
+        # Get all direct child elements using XPath
+        children_xpath = f"({parent_xpath})/*"
+        logger.info(f"Looking for direct children with XPath: {children_xpath}")
+        all_children = driver.find_elements(By.XPATH, children_xpath)
+        
+        total_children = len(all_children)
+        total_pages = (total_children + page_size - 1) // page_size if total_children > 0 else 1
+        
+        # Check if we found any children
+        if total_children == 0:
+            result = {
+                "found": True,
+                "parent_info": parent_data,
+                "total_children": 0,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": 0,
+                "children": [],
+                "message": "Parent element found but has no direct child elements"
+            }
+            
+            # Switch back to original context before returning
+            if not original_context:
+                driver.switch_to.default_content()
+                
+            return json.dumps(result)
+        
+        # Calculate pagination indices
+        start_idx = (page - 1) * page_size
+        end_idx = min(start_idx + page_size, total_children)
+        
+        # Check if the requested page is valid
+        if start_idx >= total_children:
+            error_msg = f"Page {page} exceeds total available pages ({total_pages})"
+            logger.error(error_msg)
+            
+            # Switch back to original context before returning
+            if not original_context:
+                driver.switch_to.default_content()
+                
+            return json.dumps({
+                "found": True,
+                "parent_info": parent_data,
+                "error": error_msg,
+                "total_children": total_children,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "children": []
+            })
+        
+        # Get the paginated children
+        paginated_children = all_children[start_idx:end_idx]
+        children_info = []
+        
+        # Process each child element
+        for i, child in enumerate(paginated_children):
+            # Generate a unique XPath for this specific child element
+            try:
+                unique_xpath = driver.execute_script("""
+                function getPathTo(element) {
+                    if (element.id !== '')
+                        return '//*[@id="' + element.id + '"]';
+                    if (element === document.body)
+                        return '/html/body';
+
+                    var ix = 0;
+                    var siblings = element.parentNode.childNodes;
+                    for (var i = 0; i < siblings.length; i++) {
+                        var sibling = siblings[i];
+                        if (sibling === element)
+                            return getPathTo(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
+                        if (sibling.nodeType === 1 && sibling.tagName === element.tagName)
+                            ix++;
+                    }
+                }
+                return getPathTo(arguments[0]);
+                """, child)
+            except:
+                # Fallback if JS execution fails
+                unique_xpath = f"{children_xpath}[{start_idx + i + 1}]"
+                
+            if return_html:
+                # Get HTML content for this child element
+                try:
+                    inner_html = child.get_attribute("innerHTML")
+                    outer_html = child.get_attribute("outerHTML")
+                    
+                    children_info.append({
+                        "innerHTML": inner_html,
+                        "outerHTML": outer_html,
+                        "uniqueXPath": unique_xpath
+                    })
+                except Exception as html_e:
+                    children_info.append({
+                        "error": f"Error getting HTML: {str(html_e)}",
+                        "innerHTML": "",
+                        "outerHTML": "",
+                        "uniqueXPath": unique_xpath
+                    })
+            else:
+                # Get standard element info
+                try:
+                    tag_name = child.tag_name
+                except:
+                    tag_name = "unknown"
+                    
+                try:
+                    child_id = child.get_attribute("id") or "no-id"
+                except:
+                    child_id = "unknown"
+                    
+                try:
+                    child_class = child.get_attribute("class") or "no-class"
+                except:
+                    child_class = "unknown"
+                    
+                try:
+                    child_text = child.text[:50] + "..." if len(child.text) > 50 else child.text
+                except:
+                    child_text = "unknown"
+                
+                children_info.append({
+                    "tag_name": tag_name,
+                    "id": child_id,
+                    "class": child_class,
+                    "text": child_text,
+                    "uniqueXPath": unique_xpath
+                })
+        
+        # Return children info as JSON
+        result = {
+            "found": True,
+            "parent_info": parent_data,
+            "total_children": total_children,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "children": children_info,
+            "children_xpath": children_xpath,
+            "in_iframe_id": parent_iframe_id,
+            "in_iframe_name": parent_iframe_name
+        }
+        
+        # Switch back to original context
+        if not original_context:
+            driver.switch_to.default_content()
+            
+        return json.dumps(result)
+    
+    except Exception as e:
+        error_msg = f"Error finding direct children: {str(e)}"
+        logger.error(error_msg)
+        
+        # Switch back to original context in case of error
+        try:
+            if 'original_context' in locals() and not original_context:
+                driver.switch_to.default_content()
+        except:
+            pass
+            
+        return json.dumps({
+            "found": False,
+            "error": error_msg,
+            "total_children": 0,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": 0,
+            "children": []
+        })
+
+
+@mcp.tool()
 def get_elements(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', page: int = 1, page_size: int = 3, return_html: bool = False, xpath: str = '') -> str:
     """Get multiple elements identified by text content, class name, or ID with pagination.
     
