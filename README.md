@@ -3,9 +3,9 @@ Selenium MCP Server
 
 A Model Context Protocol (MCP) server that provides web automation capabilities through Selenium WebDriver. This server allows AI assistants to interact with web pages by providing tools for navigation, element interaction, taking screenshots, and more.
 
-## Quick Start
+## 1.1. Quick Start
 
-### Using Installed Package (Recommended)
+### 1.1.1. Using Installed Package (Recommended)
 ```bash
 # Install
 pip install mcp-server-selenium
@@ -14,7 +14,7 @@ pip install mcp-server-selenium
 python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/chrome-debug
 ```
 
-### Using Source Code (Development)
+### 1.1.2. Using Source Code (Development)
 ```bash
 # Clone and setup
 git clone https://github.com/PhungXuanAnh/selenium-mcp-server.git
@@ -27,44 +27,50 @@ PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/ch
 
 ---
 
-- [1. Features](#1-features)
-- [2. Available Tools](#2-available-tools)
-- [3. Installation](#3-installation)
-  - [3.1. Prerequisites](#31-prerequisites)
-  - [3.2. Installation Options](#32-installation-options)
-    - [Option A: Install as Python Package (Recommended)](#option-a-install-as-python-package-recommended)
-    - [Option B: Run from Source Code](#option-b-run-from-source-code)
-  - [3.3. Chrome Setup](#33-chrome-setup)
-- [4. Usage](#4-usage)
-  - [4.1. Running the MCP Server](#41-running-the-mcp-server)
-    - [Option A: From Installed Package](#option-a-from-installed-package)
-    - [Option B: From Source Code](#option-b-from-source-code)
-  - [4.2. Using MCP Inspector for Testing](#42-using-mcp-inspector-for-testing)
-    - [4.2.1. Start Inspector Server](#421-start-inspector-server)
-    - [4.2.2. Access Inspector Interface](#422-access-inspector-interface)
-    - [4.2.3. Command Line Options](#423-command-line-options)
-  - [4.3. Using with MCP Clients](#43-using-with-mcp-clients)
-    - [4.3.1. Configuration Examples](#431-configuration-examples)
-    - [Debug](#debug)
-- [5. Examples](#5-examples)
-  - [5.1. Basic Web Automation](#51-basic-web-automation)
-  - [5.2. Advanced Usage](#52-advanced-usage)
-    - [JavaScript Examples](#javascript-examples)
-- [6. Logging](#6-logging)
-- [7. Troubleshooting](#7-troubleshooting)
-  - [7.1. Common Issues](#71-common-issues)
-    - [Installation-Related Issues](#installation-related-issues)
-    - [Runtime Issues](#runtime-issues)
-    - [Configuration Issues](#configuration-issues)
-  - [7.2. Debug Mode](#72-debug-mode)
-- [8. Architecture](#8-architecture)
-- [9. Contributing](#9-contributing)
-- [10. Support](#10-support)
-- [11. Documentation](#11-documentation)
-- [12. Reference](#12-reference)
+- [2. Features](#2-features)
+- [3. Available Tools](#3-available-tools)
+  - [3.1. Navigation and Page Management](#31-navigation-and-page-management)
+  - [3.2. Element Interaction](#32-element-interaction)
+  - [3.3. Element Styling](#33-element-styling)
+  - [3.4. JavaScript Execution](#34-javascript-execution)
+  - [3.5. Browser Logs](#35-browser-logs)
+  - [3.6. Local Storage Management](#36-local-storage-management)
+- [4. Installation](#4-installation)
+  - [4.1. Prerequisites](#41-prerequisites)
+  - [4.2. Installation Options](#42-installation-options)
+    - [4.2.1. Option A: Install as Python Package (Recommended)](#421-option-a-install-as-python-package-recommended)
+    - [4.2.2. Option B: Run from Source Code](#422-option-b-run-from-source-code)
+  - [4.3. Chrome Setup](#43-chrome-setup)
+- [5. Usage](#5-usage)
+  - [5.1. Running the MCP Server](#51-running-the-mcp-server)
+    - [5.1.1. Option A: From Installed Package](#511-option-a-from-installed-package)
+    - [5.1.2. Option B: From Source Code](#512-option-b-from-source-code)
+  - [5.2. Using MCP Inspector for Testing](#52-using-mcp-inspector-for-testing)
+    - [5.2.1. Start Inspector Server](#521-start-inspector-server)
+    - [5.2.2. Access Inspector Interface](#522-access-inspector-interface)
+    - [5.2.3. Command Line Options](#523-command-line-options)
+  - [5.3. Using with MCP Clients](#53-using-with-mcp-clients)
+    - [5.3.1. Configuration Examples](#531-configuration-examples)
+    - [5.3.2. Debug](#532-debug)
+- [6. Examples](#6-examples)
+  - [6.1. Basic Web Automation](#61-basic-web-automation)
+  - [6.2. Advanced Usage](#62-advanced-usage)
+    - [6.2.1. JavaScript Examples](#621-javascript-examples)
+- [7. Logging](#7-logging)
+- [8. Troubleshooting](#8-troubleshooting)
+  - [8.1. Common Issues](#81-common-issues)
+    - [8.1.1. Installation-Related Issues](#811-installation-related-issues)
+    - [8.1.2. Runtime Issues](#812-runtime-issues)
+    - [8.1.3. Configuration Issues](#813-configuration-issues)
+  - [8.2. Debug Mode](#82-debug-mode)
+- [9. Architecture](#9-architecture)
+- [10. Contributing](#10-contributing)
+- [11. Support](#11-support)
+- [12. Documentation](#12-documentation)
+- [13. Reference](#13-reference)
 
 
-# 1. Features
+# 2. Features
 
 - **Web Navigation**: Navigate to URLs and control browser navigation
 - **Element Interaction**: Click buttons, fill forms, and interact with page elements
@@ -75,39 +81,52 @@ PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/ch
 - **Waiting Strategies**: Wait for elements to load or become clickable
 - **Chrome Browser Control**: Connect to existing Chrome instances or start new ones
 
-# 2. Available Tools
+# 3. Available Tools
 
 The MCP server provides the following tools:
 
-- `navigate(url, timeout)` - Navigate to a specified URL
-- `take_screenshot()` - Capture a screenshot of the current page
-- `check_page_ready(wait_seconds)` - Check if the page is ready and optionally wait
-- `get_page_title()` - Get the current page title
-- `get_current_url()` - Get the current page URL
-- `click_element(selector, by_type, wait_time)` - Click on page elements
-- `fill_input(selector, text, by_type, wait_time, clear_first)` - Fill input fields
-- `submit_form(selector, by_type, wait_time)` - Submit forms
-- `get_element_text(selector, by_type, wait_time)` - Get text content of elements
-- `get_page_content()` - Get the full page HTML content
-- `scroll_page(direction, amount)` - Scroll the page
-- `wait_for_element(selector, by_type, timeout, condition)` - Wait for elements
-- `get_element_attribute(selector, attribute, by_type, wait_time)` - Get element attributes
-- `check_element_exists(selector, by_type, wait_time)` - Check if elements exist
+## 3.1. Navigation and Page Management
+- `navigate(url, timeout)` - Navigate to a specified URL with Chrome browser
+- `check_page_ready(wait_seconds)` - Check if the current page is fully loaded with optional wait
+- `take_screenshot()` - Take a screenshot of the current browser window
+
+## 3.2. Element Interaction
+- `get_an_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name, return_html, xpath)` - Get an element identified by various criteria
+- `get_elements(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name, page, page_size, return_html, xpath)` - Get multiple elements with pagination support
+- `get_direct_children(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name, return_html, xpath, page, page_size)` - Get all direct child nodes of an element with pagination
+- `click_to_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name, element_index, xpath)` - Click on an element identified by various criteria
+- `set_value_to_input_element(text, class_name, id, attributes, element_type, input_value, in_iframe_id, in_iframe_name, xpath)` - Set a value to an input element
+
+## 3.3. Element Styling
+- `get_style_an_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name, return_html, xpath, all_styles, computed_style)` - Get style information for an element
+
+## 3.4. JavaScript Execution
 - `run_javascript_in_console(javascript_code)` - Execute JavaScript code in the browser console
-- `run_javascript_and_get_console_output(javascript_code)` - Execute JavaScript and capture console output
+- `run_javascript_and_get_console_output(javascript_code)` - Execute JavaScript code and capture both return value and console output
 
-# 3. Installation
+## 3.5. Browser Logs
+- `get_console_logs(log_level)` - Retrieve console logs from the browser with optional filtering by log level
+- `get_network_logs(filter_url_by_text, only_errors_log)` - Retrieve network request logs from the browser with optional filtering
 
-## 3.1. Prerequisites
+## 3.6. Local Storage Management
+- `local_storage_add(key, string_value, object_value, create_empty_string, create_empty_object)` - Add or update a key-value pair in browser's local storage
+- `local_storage_read(key)` - Read a value from browser's local storage by key
+- `local_storage_read_all()` - Read all key-value pairs from browser's local storage
+- `local_storage_remove(key)` - Remove a key-value pair from browser's local storage
+- `local_storage_remove_all()` - Remove all key-value pairs from browser's local storage
+
+# 4. Installation
+
+## 4.1. Prerequisites
 
 - Python 3.10 or higher
 - Chrome browser installed
 
-## 3.2. Installation Options
+## 4.2. Installation Options
 
 You can use this MCP server in two ways:
 
-### Option A: Install as Python Package (Recommended)
+### 4.2.1. Option A: Install as Python Package (Recommended)
 
 Install directly from PyPI:
 ```bash
@@ -119,7 +138,7 @@ Or using uv:
 uv add mcp-server-selenium
 ```
 
-### Option B: Run from Source Code
+### 4.2.2. Option B: Run from Source Code
 
 1. Clone this repository:
 ```bash
@@ -139,7 +158,7 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -e .
 ```
 
-## 3.3. Chrome Setup
+## 4.3. Chrome Setup
 
 The MCP server can work with Chrome in two ways:
 
@@ -150,11 +169,11 @@ google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-debug
 
 2. **Auto-start Chrome**: The server can automatically start Chrome if no instance is found.
 
-# 4. Usage
+# 5. Usage
 
-## 4.1. Running the MCP Server
+## 5.1. Running the MCP Server
 
-### Option A: From Installed Package
+### 5.1.1. Option A: From Installed Package
 
 After installing via pip/uv, you can run the server directly:
 
@@ -172,7 +191,7 @@ python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/chrome-debug -v
 selenium-mcp-server --port 9222 --user_data_dir /tmp/chrome-debug -v
 ```
 
-### Option B: From Source Code
+### 5.1.2. Option B: From Source Code
 
 When running from source, ensure the Python path includes the src directory:
 
@@ -190,9 +209,9 @@ PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/ch
 uv run python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/chrome-debug -v
 ```
 
-## 4.2. Using MCP Inspector for Testing
+## 5.2. Using MCP Inspector for Testing
 
-### 4.2.1. Start Inspector Server
+### 5.2.1. Start Inspector Server
 
 For development and testing, you can use the MCP inspector:
 
@@ -214,7 +233,7 @@ uv run mcp dev src/mcp_server_selenium/__main__.py --port 9222 --user_data_dir /
 mcp dev python -m mcp_server_selenium
 ```
 
-### 4.2.2. Access Inspector Interface
+### 5.2.2. Access Inspector Interface
 
 Open your browser and navigate to: http://127.0.0.1:6274/#tools
 ![](/images/image.png)
@@ -224,17 +243,17 @@ Check logs:
 tailf /tmp/selenium-mcp.log
 ```
 
-### 4.2.3. Command Line Options
+### 5.2.3. Command Line Options
 
 - `--port`: Chrome remote debugging port (default: 9222)
 - `--user_data_dir`: Chrome user data directory (default: auto-generated in /tmp)
 - `-v, --verbose`: Increase verbosity (use multiple times for more details)
 
-## 4.3. Using with MCP Clients
+## 5.3. Using with MCP Clients
 
 The server communicates via stdio and follows the Model Context Protocol specification. You can integrate it with MCP-compatible AI assistants or clients.
 
-### 4.3.1. Configuration Examples
+### 5.3.1. Configuration Examples
 
 **For Claude Desktop** (`claude_desktop_config.json`):
 
@@ -308,7 +327,7 @@ Alternative source code configuration using full path:
 }
 ```
 
-### Debug
+### 5.3.2. Debug
 
 **VS Code Copilot MCP Status:**
 If you open the `.vscode/mcp.json` file, you can see the MCP server status at the bottom of VS Code.
@@ -340,9 +359,9 @@ PYTHONPATH=src python -c "import mcp_server_selenium; print('Module imported suc
 PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/test-chrome -vv
 ```
 
-# 5. Examples
+# 6. Examples
 
-## 5.1. Basic Web Automation
+## 6.1. Basic Web Automation
 
 1. **Navigate to a website**:
    - Tool: `navigate`
@@ -371,7 +390,7 @@ PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/te
    - Code: `console.log('Hello from browser'); return window.location.href;`
    - Result: Shows both console output and return value
 
-## 5.2. Advanced Usage
+## 6.2. Advanced Usage
 
 - **Wait for dynamic content**: Use `wait_for_element` to wait for elements to load
 - **Get page information**: Use `get_page_title`, `get_current_url`, `get_page_content`
@@ -379,7 +398,7 @@ PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/te
 - **JavaScript automation**: Use `run_javascript_in_console` for complex DOM manipulation and data extraction
 - **JavaScript debugging**: Use `run_javascript_and_get_console_output` to capture console logs for debugging
 
-### JavaScript Examples
+### 6.2.1. JavaScript Examples
 
 **Extract page data**:
 ```javascript
@@ -415,18 +434,18 @@ document.querySelector('#login-form').submit();
 return 'Form submitted successfully';
 ```
 
-# 6. Logging
+# 7. Logging
 
 The server logs all operations to `/tmp/selenium-mcp.log` with rotation. Use the `-v` flag to increase console verbosity:
 
 - `-v`: INFO level logging
 - `-vv`: DEBUG level logging
 
-# 7. Troubleshooting
+# 8. Troubleshooting
 
-## 7.1. Common Issues
+## 8.1. Common Issues
 
-### Installation-Related Issues
+### 8.1.1. Installation-Related Issues
 
 **Package not found (installed package):**
 ```bash
@@ -444,7 +463,7 @@ export PYTHONPATH=/path/to/selenium-mcp-server/src
 PYTHONPATH=src python -m mcp_server_selenium
 ```
 
-### Runtime Issues
+### 8.1.2. Runtime Issues
 
 1. **Chrome not starting**: Ensure Chrome is installed and accessible from PATH
 2. **Port conflicts**: Use a different port with `--port` option
@@ -453,7 +472,7 @@ PYTHONPATH=src python -m mcp_server_selenium
 5. **JavaScript execution errors**: Check browser console for syntax errors or security restrictions
 6. **Console output not captured**: Ensure the JavaScript code runs successfully before checking console logs
 
-### Configuration Issues
+### 8.1.3. Configuration Issues
 
 **MCP Client Connection Problems:**
 - Verify the command path is correct (use `which python` to find Python executable)
@@ -461,7 +480,7 @@ PYTHONPATH=src python -m mcp_server_selenium
 - For installed package: Ensure the package is installed in the same Python environment as the MCP client
 - Check MCP client logs for detailed error messages
 
-## 7.2. Debug Mode
+## 8.2. Debug Mode
 
 **Installed Package:**
 ```bash
@@ -474,14 +493,14 @@ cd /path/to/selenium-mcp-server
 PYTHONPATH=src python -m mcp_server_selenium -vv --port 9222 --user_data_dir /tmp/debug-chrome
 ```
 
-# 8. Architecture
+# 9. Architecture
 
 - **FastMCP**: Uses the FastMCP framework for MCP protocol implementation
 - **Selenium WebDriver**: Chrome WebDriver for browser automation
 - **Synchronous Design**: All operations are synchronous for reliability
 - **Chrome DevTools Protocol**: Connects to Chrome via remote debugging protocol
 
-# 9. Contributing
+# 10. Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -489,20 +508,20 @@ PYTHONPATH=src python -m mcp_server_selenium -vv --port 9222 --user_data_dir /tm
 4. Add tests if applicable
 5. Submit a pull request
 
-# 10. Support
+# 11. Support
 
 For issues and questions:
 - Create an issue in the repository
 - Check the logs at `/tmp/selenium-mcp.log`
 - Use verbose logging for debugging
 
-# 11. Documentation
+# 12. Documentation
 
 For detailed documentation on specific features:
 - [JavaScript Console Tools](docs/javascript_console_tools.md) - Comprehensive guide for JavaScript execution tools
 - [Examples](examples/javascript_console_examples.py) - JavaScript execution examples and use cases
 
-# 12. Reference
+# 13. Reference
 
 - https://github.com/modelcontextprotocol/python-sdk
 - https://github.com/modelcontextprotocol/servers
