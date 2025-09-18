@@ -1,27 +1,5 @@
 {
   "servers": {
-    "awesome-copilot": {
-      "type": "stdio",
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "ghcr.io/microsoft/mcp-dotnet-samples/awesome-copilot:latest"
-      ],
-      // "envFile": "/home/xuananh/Documents/postgres-mcp/.env"
-    },
-    "postgres": {
-        "command": "/home/xuananh/Documents/postgres-mcp/.venv/bin/python",
-        "args": [
-          "-m",
-          "postgres_mcp"
-        ],
-        "env": {
-          "PYTHONPATH": "/home/xuananh/Documents/postgres-mcp/src",
-          "DATABASE_URI": "postgresql://postgres:showheroes@localhost:5432/viralize"
-        }
-      },
     "selenium-run-directly": {
         "command": "/home/xuananh/repo/selenium-mcp-server/.venv/bin/python",
         "args": [

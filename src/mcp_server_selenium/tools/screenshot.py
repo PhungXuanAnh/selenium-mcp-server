@@ -1,3 +1,4 @@
+from typing import Optional
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -7,12 +8,15 @@ logger = logging.getLogger(__name__)
 
 
 @mcp.tool()
-def take_screenshot() -> str:
+def take_screenshot(save_path: Optional[str] = None) -> str:
     """Take a screenshot of the current browser window.
     
     This tool captures the current visible area of the browser window and saves it
-    as a PNG file in the ~/selenium-mcp/screenshot directory. The filename will include
-    a timestamp for uniqueness.
+    as a PNG file. By default, it saves to the current project directory.
+    
+    Args:
+        save_path: Optional path where the screenshot should be saved. If not provided,
+                  it will save to the current project directory.
     
     Returns:
         The path to the saved screenshot file.
@@ -22,8 +26,14 @@ def take_screenshot() -> str:
     except RuntimeError as e:
         raise RuntimeError(str(e))
     
-    # Create the screenshot directory if it doesn't exist
-    screenshot_dir = Path.home() / "selenium-mcp" / "screenshot"
+    # Determine where to save the screenshot
+    if save_path:
+        screenshot_dir = Path(save_path)
+    else:
+        # Use current working directory (project root)
+        screenshot_dir = Path.cwd()
+    
+    # Create the directory if it doesn't exist
     screenshot_dir.mkdir(parents=True, exist_ok=True)
     
     # Generate a filename automatically
