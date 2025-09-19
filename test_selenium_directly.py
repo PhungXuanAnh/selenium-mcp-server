@@ -12,27 +12,11 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from mcp_server_selenium.tools.style import get_style_an_element
+from mcp_server_selenium.tools.navigate import navigate
 
 
 def test_selenium():
-    """Test function to call get_style_an_element directly with specified arguments."""
-    
-    print("Testing get_style_an_element function...")
-    print("=" * 50)
-    
-    # Call the function with the specified arguments
-    result = get_style_an_element(
-        element_type="ul",
-        class_name="parent scroll",
-        all_styles=True,
-        computed_style=True
-    )
-    
-    print("Result:")
-    print(result)
-    print("=" * 50)
-    
-    return result
+    navigate("https://google.com")
 
 
 if __name__ == "__main__":
