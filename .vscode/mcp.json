@@ -1,12 +1,25 @@
 {
   "servers": {
-    "selenium-run-directly": {
+    "selenium-run-directly-normal-chrome": {
         "command": "/home/xuananh/repo/selenium-mcp-server/.venv/bin/python",
         "args": [
             "-m",
             "mcp_server_selenium",
             "--user_data_dir=/home/xuananh/.config/google-chrome-selenium-mcp-direct",
             "--port=9225"
+        ],
+        "env": {
+          "PYTHONPATH": "/home/xuananh/repo/selenium-mcp-server/src"
+        }
+    },
+    "selenium-run-directly-undetected-chrome": {
+        "command": "/home/xuananh/repo/selenium-mcp-server/.venv/bin/python",
+        "args": [
+            "-m",
+            "mcp_server_selenium",
+            "--user_data_dir=/home/xuananh/.config/google-chrome-selenium-mcp-direct-undetected",
+            "--port=9226",
+            "--driver=undetected_chrome_driver"
         ],
         "env": {
           "PYTHONPATH": "/home/xuananh/repo/selenium-mcp-server/src"

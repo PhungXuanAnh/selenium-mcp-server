@@ -42,9 +42,9 @@ LOGGING_CONFIG = {
     },
     "loggers": {
         "root": {
-            "handlers": ["app.INFO"],
+            "handlers": ["app.DEBUG"],
             "propagate": False,
-            "level": "INFO",
+            "level": "DEBUG",
         },
     },
 }
@@ -90,6 +90,18 @@ def main(user_data_dir_param: str, port_param: int, driver_param: str, verbose: 
         raise e
     
     logger.info(f"Running MCP Selenium server with {driver_param} configured at 127.0.0.1:{server.debug_port}, user data dir: {server.user_data_dir}")
+    
+    # Initialize driver and start browser
+    try:
+        logger.info("Initializing driver and starting browser...")
+        driver_instance = server.initialize_driver_instance()
+        # Ensure the actual selenium driver is initialized (this starts the browser)
+        driver_instance.ensure_driver_initialized()
+        logger.info("Driver initialized and browser started successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize driver: {str(e)}")
+        raise e
+    
     try:
         # Run the MCP server
         logger.info("Starting MCP Selenium server")
