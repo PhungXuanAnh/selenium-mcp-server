@@ -59,8 +59,9 @@ logger = logging.getLogger(__name__)
 @click.option("--driver", "driver_param", default="normal_chromedriver", 
               type=click.Choice(["normal_chromedriver", "undetected_chrome_driver"]),
               help="Type of Chrome driver to use (default: normal_chromedriver)")
+@click.option("--profile", "profile_param", default="Default", help="Chrome profile to use (default: Default)")
 @click.option("-v", "--verbose", count=True)
-def main(user_data_dir_param: str, port_param: int, driver_param: str, verbose: int) -> None:
+def main(user_data_dir_param: str, port_param: int, driver_param: str, profile_param: str, verbose: int) -> None:
     """Selenium MCP Server - Synchronous version"""
     # Import server module to access global variables
     from . import server
@@ -82,6 +83,9 @@ def main(user_data_dir_param: str, port_param: int, driver_param: str, verbose: 
     # Set global driver_type from command line argument
     server.driver_type = driver_param
     
+    # Set global profile from command line argument
+    server.profile = profile_param
+    
     # Validate driver availability early
     try:
         server.get_driver_factory(driver_param)
@@ -89,7 +93,7 @@ def main(user_data_dir_param: str, port_param: int, driver_param: str, verbose: 
         logger.error(f"Driver validation failed: {str(e)}")
         raise e
     
-    logger.info(f"Running MCP Selenium server with {driver_param} configured at 127.0.0.1:{server.debug_port}, user data dir: {server.user_data_dir}")
+    logger.info(f"Running MCP Selenium server with {driver_param} configured at 127.0.0.1:{server.debug_port}, user data dir: {server.user_data_dir}, profile: {server.profile}")
     
     # Initialize driver and start browser
     try:

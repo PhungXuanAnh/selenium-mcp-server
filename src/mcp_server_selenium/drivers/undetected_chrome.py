@@ -35,9 +35,10 @@ if UC_AVAILABLE:
     class UndetectedChromeDriver:
         """Undetected Chrome WebDriver implementation using undetected-chromedriver."""
         
-        def __init__(self, user_data_dir: str = "", debug_port: int = 9222):
+        def __init__(self, user_data_dir: str = "", debug_port: int = 9222, profile: str = "Default"):
             self.user_data_dir = user_data_dir
             self.debug_port = debug_port
+            self.profile = profile
             self.driver: Optional[Any] = None
         
         def check_chrome_debugger_port(self) -> bool:
@@ -62,6 +63,7 @@ if UC_AVAILABLE:
             # Setup Chrome options
             opts = uc.ChromeOptions()
             opts.add_argument(f'--user-data-dir={user_data_dir}')
+            opts.add_argument(f'--profile-directory={self.profile}')
             
             # Ultra-fast flags
             fast_flags = [
@@ -230,7 +232,11 @@ else:
     class UndetectedChromeDriver:
         """Placeholder for UndetectedChromeDriver when package is not installed."""
         
-        def __init__(self, user_data_dir: str = "", debug_port: int = 9222):
+        def __init__(self, user_data_dir: str = "", debug_port: int = 9222, profile: str = "Default"):
+            self.user_data_dir = user_data_dir
+            self.debug_port = debug_port
+            self.profile = profile
+            self.driver: Optional[Any] = None
             raise ImportError(
                 "undetected-chromedriver is not installed. "
                 "Please install it with: pip install undetected-chromedriver"

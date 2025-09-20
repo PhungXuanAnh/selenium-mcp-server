@@ -19,6 +19,9 @@ debug_port: int = 9222
 # Global variable for driver type
 driver_type: str = "normal_chromedriver"
 
+# Global variable for Chrome profile
+profile: str = "Default"
+
 # Initialize FastMCP
 mcp = FastMCP(
     name="mcp-selenium-sync",
@@ -42,19 +45,20 @@ def get_driver_factory(driver_type: str = "normal_chromedriver"):
         raise ValueError(f"Unsupported driver type: {driver_type}")
 
 
-def initialize_driver_instance(custom_user_data_dir: str = "", custom_debug_port: Optional[int] = None):
+def initialize_driver_instance(custom_user_data_dir: str = "", custom_debug_port: Optional[int] = None, custom_profile: str = ""):
     """Initialize the global driver instance based on driver type."""
-    global driver_instance, user_data_dir, debug_port, driver_type
+    global driver_instance, user_data_dir, debug_port, driver_type, profile
     
     # Use custom values if provided
     data_dir = custom_user_data_dir or user_data_dir
     port = custom_debug_port or debug_port
+    profile_name = custom_profile or profile
     
     # Get the appropriate driver class
     driver_class = get_driver_factory(driver_type)
     
     # Initialize the driver instance
-    driver_instance = driver_class(user_data_dir=data_dir, debug_port=port)
+    driver_instance = driver_class(user_data_dir=data_dir, debug_port=port, profile=profile_name)
     
     logger.info(f"Initialized {driver_type} driver instance")
     return driver_instance

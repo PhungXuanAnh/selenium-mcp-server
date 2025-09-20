@@ -14,9 +14,10 @@ logger = logging.getLogger(__name__)
 class NormalChromeDriver:
     """Normal Chrome WebDriver implementation."""
     
-    def __init__(self, user_data_dir: str = "", debug_port: int = 9222):
+    def __init__(self, user_data_dir: str = "", debug_port: int = 9222, profile: str = "Default"):
         self.user_data_dir = user_data_dir
         self.debug_port = debug_port
+        self.profile = profile
         self.driver: Optional[webdriver.Chrome] = None
     
     def check_chrome_debugger_port(self) -> bool:
@@ -47,6 +48,7 @@ class NormalChromeDriver:
                 "google-chrome-stable",
                 f"--remote-debugging-port={self.debug_port}",
                 f"--user-data-dir={self.user_data_dir}",
+                f"--profile-directory={self.profile}",
                 "--no-first-run",
                 "--no-default-browser-check",
                 "--start-maximized",  # Start Chrome maximized
@@ -97,6 +99,7 @@ class NormalChromeDriver:
                 "google-chrome-stable",
                 f"--remote-debugging-port={self.debug_port}",
                 f"--user-data-dir={self.user_data_dir}",
+                f"--profile-directory={self.profile}",
                 "--no-first-run",
                 "--no-default-browser-check",
                 "--enable-logging",  # Enable logging
