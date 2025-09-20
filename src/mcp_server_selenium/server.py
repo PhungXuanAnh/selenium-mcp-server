@@ -2,8 +2,8 @@ import logging
 from typing import Optional, Union
 
 from mcp.server.fastmcp import FastMCP
-from .drivers.normal_chromedriver import NormalChromeDriver
-from .drivers.undetected_chrome_driver import UndetectedChromeDriver
+from .drivers.normal_chrome import NormalChromeDriver
+from .drivers.undetected_chrome import UndetectedChromeDriver
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ def get_driver_factory(driver_type: str = "normal_chromedriver"):
         return NormalChromeDriver
     elif driver_type == "undetected_chrome_driver":
         # Check if undetected chrome driver is available
-        from .drivers.undetected_chrome_driver import UC_AVAILABLE
+        from .drivers.undetected_chrome import UC_AVAILABLE
         if not UC_AVAILABLE:
             raise ImportError(
                 "undetected-chromedriver is not installed. "
