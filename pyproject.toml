@@ -12,6 +12,8 @@ dependencies = [
     "selenium",
     "click",
     "mcp[cli]",
+    "undetected-chromedriver>=3.5.5",
+    "setuptools>=80.9.0",
 ]
 
 [project.urls]
