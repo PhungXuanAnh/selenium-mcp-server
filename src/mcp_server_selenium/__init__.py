@@ -1,17 +1,17 @@
 import click
 import logging
 from logging.config import dictConfig
-from .server import driver, mcp
+from .server import driver_instance, mcp, quit_driver
 
 # NOTE: Import tools to register them with FastMCP
-from mcp_server_selenium.tools import navigate
-from mcp_server_selenium.tools import screenshot
-from mcp_server_selenium.tools import page_ready
-from mcp_server_selenium.tools import logs
-from mcp_server_selenium.tools import local_storage
-from mcp_server_selenium.tools import element_interaction
-from mcp_server_selenium.tools import script
-from mcp_server_selenium.tools import style
+from .tools import navigate
+from .tools import screenshot
+from .tools import page_ready
+from .tools import logs
+from .tools import local_storage
+from .tools import element_interaction
+from .tools import script
+from .tools import style
 
 
 LOGGING_CONFIG = {
@@ -56,11 +56,14 @@ logger = logging.getLogger(__name__)
 @click.command()
 @click.option("--user_data_dir", "user_data_dir_param", help="Chrome user data directory (default: /tmp/chrome-debug-{timestamp})")
 @click.option("--port", "port_param", type=int, help="Port for Chrome remote debugging (default: 9222)")
+@click.option("--driver", "driver_param", default="normal_chromedriver", 
+              type=click.Choice(["normal_chromedriver", "undetected_chrome_driver"]),
+              help="Type of Chrome driver to use (default: normal_chromedriver)")
 @click.option("-v", "--verbose", count=True)
-def main(user_data_dir_param: str, port_param: int, verbose: int) -> None:
+def main(user_data_dir_param: str, port_param: int, driver_param: str, verbose: int) -> None:
     """Selenium MCP Server - Synchronous version"""
-    global user_data_dir
-    global debug_port
+    # Import server module to access global variables
+    from . import server
     
     # Setup logging based on verbosity
     if verbose == 1:
@@ -70,13 +73,23 @@ def main(user_data_dir_param: str, port_param: int, verbose: int) -> None:
     
     # Set global user_data_dir from command line argument
     if user_data_dir_param:
-        user_data_dir = user_data_dir_param
+        server.user_data_dir = user_data_dir_param
         
     # Set global debug_port from command line argument
     if port_param:
-        debug_port = port_param
+        server.debug_port = port_param
+        
+    # Set global driver_type from command line argument
+    server.driver_type = driver_param
     
-    logger.info(f"Running MCP Selenium server with Chrome configured at 127.0.0.1:{debug_port}, user data dir: {user_data_dir}")
+    # Validate driver availability early
+    try:
+        server.get_driver_factory(driver_param)
+    except (ImportError, ValueError) as e:
+        logger.error(f"Driver validation failed: {str(e)}")
+        raise e
+    
+    logger.info(f"Running MCP Selenium server with {driver_param} configured at 127.0.0.1:{server.debug_port}, user data dir: {server.user_data_dir}")
     try:
         # Run the MCP server
         logger.info("Starting MCP Selenium server")
@@ -86,11 +99,8 @@ def main(user_data_dir_param: str, port_param: int, verbose: int) -> None:
         logger.error(f"Error starting server: {str(e)}")
     
     finally:
-        # Clean up the WebDriver when done, but don't close the browser
-        # since we're connecting to an existing instance
-        if driver is not None:
-            logger.info("Disconnecting from Chrome instance (but leaving browser open)")
-            driver.quit()
+        # Clean up the WebDriver when done
+        quit_driver()
 
 
 if __name__ == "__main__":

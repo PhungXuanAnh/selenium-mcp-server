@@ -1,3 +1,3 @@
-from mcp_server_selenium import main
+from . import main
 
 main()

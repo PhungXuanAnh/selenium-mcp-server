@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Any, Dict, List
 from urllib.parse import urlparse
-from mcp_server_selenium.server import mcp, ensure_driver_initialized
+from ..server import mcp, ensure_driver_initialized
 from selenium import webdriver
 
 logger = logging.getLogger(__name__)

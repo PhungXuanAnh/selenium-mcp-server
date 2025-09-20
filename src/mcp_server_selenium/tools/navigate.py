@@ -2,7 +2,7 @@ import logging
 import time
 from venv import logger
 from selenium.common.exceptions import TimeoutException
-from mcp_server_selenium.server import mcp, ensure_driver_initialized, start_chrome, initialize_driver
+from ..server import mcp, ensure_driver_initialized
 
 logger = logging.getLogger(__name__)
 
@@ -70,26 +70,26 @@ def navigate(url: str, timeout: int = 60) -> str:
         if "invalid session id" in error_msg and "browser has closed" in error_msg:
             logger.info("Detected that Chrome has been closed. Attempting to restart Chrome...")
             
-            # Attempt to restart Chrome
-            if start_chrome():
-                logger.info("Successfully restarted Chrome")
+            # Import server module to access driver instance and restart functionality
+            from .. import server
+            
+            # Reset the driver instance to force reinitialization
+            server.driver_instance = None
+            
+            # Attempt to reinitialize the driver
+            try:
+                driver = ensure_driver_initialized()
+                logger.info("WebDriver reinitialized successfully")
                 
-                # Reinitialize the driver
+                # Try to navigate again
                 try:
-                    driver = initialize_driver()
-                    logger.info("WebDriver reinitialized successfully")
-                    
-                    # Try to navigate again
-                    try:
-                        driver.set_page_load_timeout(navigation_timeout)
-                        driver.get(url)
-                        return f"Chrome was restarted and navigation to {url} initiated"
-                    except Exception as nav_e:
-                        return f"Chrome was restarted but navigation failed: {str(nav_e)}"
-                except Exception as init_e:
-                    return f"Chrome was restarted but failed to reinitialize WebDriver: {str(init_e)}"
-            else:
-                return f"Failed to restart Chrome after it was closed"
+                    driver.set_page_load_timeout(navigation_timeout)
+                    driver.get(url)
+                    return f"Chrome was restarted and navigation to {url} initiated"
+                except Exception as nav_e:
+                    return f"Chrome was restarted but navigation failed: {str(nav_e)}"
+            except Exception as init_e:
+                return f"Failed to reinitialize WebDriver: {str(init_e)}"
         
         # For other errors, just raise the exception
         raise Exception(f"Error navigating to {url}: {error_msg}")

@@ -2,7 +2,7 @@ from typing import Optional
 import logging
 from datetime import datetime
 from pathlib import Path
-from mcp_server_selenium.server import mcp, ensure_driver_initialized
+from ..server import mcp, ensure_driver_initialized
 
 logger = logging.getLogger(__name__)
 
