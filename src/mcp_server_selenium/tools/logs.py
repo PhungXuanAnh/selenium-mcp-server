@@ -107,21 +107,23 @@ def get_network_logs_from_performance(driver: webdriver.Chrome, filter_url_by_te
                 grouped_events[request_id] = []
             grouped_events[request_id].append(event)
         
-        # Filter by URL domain text if specified
+        # Filter by URL text if specified (checks full URL, not just domain)
         if filter_url_by_text:
-            logger.info(f"Filtering network logs by domain containing: {filter_url_by_text}")
+            logger.info(f"Filtering network logs by URL containing: {filter_url_by_text}")
             filtered_events = {}
             for request_id, events_list in grouped_events.items():
-                # Check if any event in this group has a URL domain containing the filter text
+                # Check if any event in this group has a URL containing the filter text
                 for event in events_list:
                     if 'url' in event:
                         try:
+                            # Check both domain and full URL for flexibility
                             domain = urlparse(event['url']).netloc
-                            if filter_url_by_text in domain:
+                            full_url = event['url']
+                            if filter_url_by_text in domain or filter_url_by_text in full_url:
                                 filtered_events[request_id] = events_list
                                 break
                         except Exception as e:
-                            logger.error(f"Error parsing URL domain: {str(e)}")
+                            logger.error(f"Error parsing URL: {str(e)}")
             grouped_events = filtered_events
         
         # Convert dictionary to list of lists
@@ -175,9 +177,10 @@ def get_network_logs(filter_url_by_text: str = '', only_errors_log: bool = False
     since the page was loaded. Results can optionally be filtered by domain.
     
     Args:
-        filter_url_by_text: Text to filter domain names by. When specified, only network
-            requests to domains containing this text will be included. Default is empty
-            string (no filtering). You should filter by domain because the network logs are too many.
+        filter_url_by_text: Text to filter URLs by. When specified, only network
+            requests with URLs containing this text (in either domain or path) will be included. 
+            Default is empty string (no filtering). You should filter by domain or path because 
+            the network logs can be numerous.
         only_errors_log: When True, only returns network requests with error status codes (4xx/5xx)
             or other network failures. Default is False (returns all network logs).
     

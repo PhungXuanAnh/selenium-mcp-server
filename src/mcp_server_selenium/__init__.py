@@ -1,7 +1,9 @@
 import click
 import logging
 from logging.config import dictConfig
-from .server import driver_instance, mcp, quit_driver
+
+from .config import LOGGING_CONFIG
+from .server import mcp, quit_driver
 
 # NOTE: Import tools to register them with FastMCP
 from .tools import navigate
@@ -12,42 +14,6 @@ from .tools import local_storage
 from .tools import element_interaction
 from .tools import script
 from .tools import style
-
-
-LOGGING_CONFIG = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "verbose": {
-            "format": "[%(asctime)s] [%(pathname)s:%(lineno)d] [%(funcName)s] %(levelname)s: %(message)s"
-        },
-    },
-    "handlers": {
-        "app.DEBUG": {
-            "level": "DEBUG",
-            "class": "logging.handlers.RotatingFileHandler",
-            "formatter": "verbose",
-            "filename": "/tmp/selenium-mcp.log",
-            "maxBytes": 100000 * 1024,  # 100MB
-            "backupCount": 3,
-        },
-        "app.INFO": {
-            "level": "INFO",
-            "class": "logging.handlers.RotatingFileHandler",
-            "formatter": "verbose",
-            "filename": "/tmp/selenium-mcp.log",
-            "maxBytes": 100000 * 1024,  # 100MB
-            "backupCount": 3,
-        },
-    },
-    "loggers": {
-        "root": {
-            "handlers": ["app.DEBUG"],
-            "propagate": False,
-            "level": "DEBUG",
-        },
-    },
-}
 
 dictConfig(LOGGING_CONFIG)
 
