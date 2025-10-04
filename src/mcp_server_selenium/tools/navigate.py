@@ -42,6 +42,11 @@ def navigate(url: str, timeout: int = 60) -> str:
     
     start_time = time.time()
     try:
+        # remove performance log file if exists before navigation
+        import os
+        if os.path.exists('/tmp/performance_logs.json'):
+            os.remove('/tmp/performance_logs.json')
+
         # Start navigation
         logger.info(f"Calling driver.get({url})")
         driver.get(url)

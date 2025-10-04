@@ -80,7 +80,7 @@ def test_take_screenshot():
     
     return result
 
-def test_get_network_logs(filter_url_by_text=""):
+def test_get_network_logs_and_classify(filter_url_by_text=""):
     """Test getting network logs."""
     print("Testing get_network_logs function...")
     print("=" * 50)
@@ -127,7 +127,7 @@ def test_get_network_logs(filter_url_by_text=""):
 
 
 if __name__ == "__main__":
-    initialize_driver_instance(custom_user_data_dir="/tmp/google-chrome-selenium-mcp-direct")
+    driver = initialize_driver_instance(custom_user_data_dir="/tmp/google-chrome-selenium-mcp-direct")
     # Test navigation first
     test_navigate()
     
@@ -139,5 +139,6 @@ if __name__ == "__main__":
     test_check_page_ready()
     
     # Test network logs (only once since logs are cleared after reading)
-    test_get_network_logs()
+    test_get_network_logs_and_classify()
+    
     

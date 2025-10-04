@@ -31,107 +31,188 @@ def process_performance_log_entry(entry):
         return json.loads(entry['message'])['message']
     except Exception as e:
         logger.error(f"Error processing performance log entry: {str(e)}")
-        return None
+        return {}
 
 
-def get_network_logs_from_performance(driver: webdriver.Chrome, filter_url_by_text: str = ''):
+def get_performance_logs(driver: webdriver.Chrome):
+    """Get raw performance logs from the driver
+
+        ### 🔧 Background
+
+        Each CDP event belongs to a **domain**, like:
+
+        * `Network`
+        * `Page`
+        * `Runtime`
+        * `Log`
+        * `Performance`
+        * `Console`
+        * `DOM`
+        * `Target`
+        * `Security`
+        * `Fetch`
+        * `Storage`
+        * `Tracing`
+        * `Browser`
+        * `Emulation`
+        * `Input`
+        * …and several others.
+
+        So `msg["method"]` is of the form:
+
+        ```
+        <Domain>.<EventName>
+        ```
+
+        Example events:
+
+        ```
+        Network.requestWillBeSent
+        Network.responseReceived
+        Page.loadEventFired
+        Page.domContentEventFired
+        Runtime.consoleAPICalled
+        Log.entryAdded
+        Performance.metrics
+        ```
+
+        ---
+
+        ### ⚙️ When using Selenium’s performance log (`get_log("performance")`)
+
+        You’ll often see these domains:
+
+        | Domain          | Common Events                                        | Purpose                  |
+        | --------------- | ---------------------------------------------------- | ------------------------ |
+        | **Network**     | requestWillBeSent, responseReceived, loadingFinished | All HTTP traffic         |
+        | **Page**        | loadEventFired, domContentEventFired                 | Page lifecycle           |
+        | **Runtime**     | consoleAPICalled, exceptionThrown                    | JS logs / errors         |
+        | **Log**         | entryAdded                                           | Browser log entries      |
+        | **Performance** | metrics                                              | Timing metrics           |
+        | **Security**    | securityStateChanged                                 | HTTPS / certificate info |
+
+        ---
+
+        ### 🔍 So your filter
+
+        ```python
+        if msg.get("method", "").startswith("Network."):
+        ```
+
+        means you’re **only collecting network-related CDP events**, ignoring other domains like Page or Runtime.
+
+        You could broaden your filter, for example:
+
+        ```python
+        if msg.get("method", "").startswith(("Network.", "Page.", "Runtime.")):
+            ...
+        ```
+
+        ---
+
+        ✅ **Summary**
+
+        * The prefix before the dot (`Network`, `Page`, `Runtime`, …) is the **CDP domain**.
+        * There are many domains; Selenium’s “performance” log can contain entries from any of them.
+        * Filtering by `"Network."` is just a convenient way to isolate HTTP-level traffic events.
+
+    """
+    if driver is None:
+        return []
+    
+    try:
+        performance_logs = driver.get_log('performance')
+        
+        # write/append performance logs to a file for debugging
+        with open('/tmp/performance_logs.json', 'a') as f:
+            for entry in performance_logs:
+                f.write(json.dumps(entry) + '\n')
+
+        return performance_logs
+    except Exception as e:
+        logger.error(f"Error getting raw performance logs: {str(e)}")
+        return []
+
+def get_network_logs_from_performance_logs(driver: webdriver.Chrome, filter_url_by_text: str = '', only_errors_log: bool = False) -> List[Dict[str, Any]]:
     """Get network logs using performance logging"""
     if driver is None:
         return []
     
     try:
         # Get raw performance logs
-        performance_logs = driver.get_log('performance')
-        
+        performance_logs = get_performance_logs(driver)
+        if not performance_logs:
+            return []
+
         # Process the logs to extract the message part
-        events = []
+        network_events = []
         for entry in performance_logs:
             event = process_performance_log_entry(entry)
-            if event is not None:
-                events.append(event)
-        
-        # Filter for network events
-        network_events = []
-        for event in events:
             if 'Network.' in event.get('method', ''):
                 # Extract the relevant information
-                method = event.get('method', '')
                 params = event.get('params', {})
                 request_id = params.get('requestId', '')
+                request = params.get('request', {})
                 
-                # Create a simplified event object
-                if method == 'Network.requestWillBeSent':
-                    request = params.get('request', {})
-                    network_events.append({
-                        'type': 'request',
-                        'requestId': request_id,
-                        'method': request.get('method', ''),
-                        'url': request.get('url', ''),
-                        'timestamp': params.get('timestamp', 0),
-                        'headers': request.get('headers', {})
-                    })
-                elif method == 'Network.responseReceived':
-                    response = params.get('response', {})
-                    status = response.get('status', 0)
-                    status_text = response.get('statusText', '')
+                # Filter by URL text
+                if filter_url_by_text and filter_url_by_text.strip() not in request.get('url', ''):
+                    continue
+                
+                if only_errors_log:
+                    if params.get('response', {}).get("status", 0) < 400 and event.get('method') != 'Network.loadingFailed':
+                        continue
+                
+                network_events.append(event)
+                
+                # # Create a simplified event object
+                # if method == 'Network.requestWillBeSent':
+                #     request = params.get('request', {})
+                #     network_events.append({
+                #         'type': 'request',
+                #         'requestId': request_id,
+                #         'method': request.get('method', ''),
+                #         'url': request.get('url', ''),
+                #         'timestamp': params.get('timestamp', 0),
+                #         'headers': request.get('headers', {})
+                #     })
+                # elif method == 'Network.responseReceived':
+                #     response = params.get('response', {})
+                #     status = response.get('status', 0)
+                #     status_text = response.get('statusText', '')
                     
-                    network_events.append({
-                        'type': 'response',
-                        'requestId': request_id,
-                        'status': status,
-                        'statusText': status_text,
-                        'url': response.get('url', ''),
-                        'timestamp': params.get('timestamp', 0),
-                        'headers': response.get('headers', {}),
-                        'mimeType': response.get('mimeType', ''),
-                        'hasError': status >= 400
-                    })
-                elif method == 'Network.loadingFailed':
-                    error_text = params.get('errorText', '')
-                    canceled = params.get('canceled', False)
+                #     network_events.append({
+                #         'type': 'response',
+                #         'requestId': request_id,
+                #         'status': status,
+                #         'statusText': status_text,
+                #         'url': response.get('url', ''),
+                #         'timestamp': params.get('timestamp', 0),
+                #         'headers': response.get('headers', {}),
+                #         'mimeType': response.get('mimeType', ''),
+                #         'hasError': status >= 400
+                #     })
+                # elif method == 'Network.loadingFailed':
+                #     error_text = params.get('errorText', '')
+                #     canceled = params.get('canceled', False)
                     
-                    network_events.append({
-                        'type': 'failed',
-                        'requestId': request_id,
-                        'errorText': error_text,
-                        'canceled': canceled,
-                        'timestamp': params.get('timestamp', 0),
-                        'hasError': True
-                    })
+                #     network_events.append({
+                #         'type': 'failed',
+                #         'requestId': request_id,
+                #         'errorText': error_text,
+                #         'canceled': canceled,
+                #         'timestamp': params.get('timestamp', 0),
+                #         'hasError': True
+                #     })
         
-        # Group network events by requestId
-        grouped_events: Dict[str, List[Dict[str, Any]]] = {}
-        for event in network_events:
-            request_id = event.get('requestId', '')
-            if request_id not in grouped_events:
-                grouped_events[request_id] = []
-            grouped_events[request_id].append(event)
         
-        # Filter by URL text if specified (checks full URL, not just domain)
-        if filter_url_by_text:
-            logger.info(f"Filtering network logs by URL containing: {filter_url_by_text}")
-            filtered_events = {}
-            for request_id, events_list in grouped_events.items():
-                # Check if any event in this group has a URL containing the filter text
-                for event in events_list:
-                    if 'url' in event:
-                        try:
-                            # Check both domain and full URL for flexibility
-                            domain = urlparse(event['url']).netloc
-                            full_url = event['url']
-                            if filter_url_by_text in domain or filter_url_by_text in full_url:
-                                filtered_events[request_id] = events_list
-                                break
-                        except Exception as e:
-                            logger.error(f"Error parsing URL: {str(e)}")
-            grouped_events = filtered_events
+        
+            
         
         # Convert dictionary to list of lists
-        result = list(grouped_events.values())
         
-        return result
+        return network_events
     except Exception as e:
-        logger.error(f"Error getting network logs from performance: {str(e)}")
+        logger.error(f"Error getting network logs from performance logs: {str(e)}")
         return []
 
 
@@ -185,7 +266,7 @@ def get_network_logs(filter_url_by_text: str = '', only_errors_log: bool = False
             or other network failures. Default is False (returns all network logs).
     
     Returns:
-        A JSON string containing the network request logs, grouped by request ID.
+        A JSON string containing the network request logs
     """
     try:
         driver = ensure_driver_initialized()
@@ -194,21 +275,7 @@ def get_network_logs(filter_url_by_text: str = '', only_errors_log: bool = False
     
     try:
         # Get network logs from performance data
-        network_logs = get_network_logs_from_performance(driver, filter_url_by_text)
-        
-        # Filter for errors only if only_errors_log is True
-        if only_errors_log:
-            # Filter for errors only (status >= 400 or failed requests)
-            error_logs = []
-            for request_events in network_logs:
-                # Check if any event in this request group has an error
-                has_error = any(event.get('hasError', False) for event in request_events)
-                if has_error:
-                    error_logs.append(request_events)
-            
-            network_logs = error_logs
-        
-        # Return formatted logs
+        network_logs = get_network_logs_from_performance_logs(driver, filter_url_by_text, only_errors_log)
         return json.dumps(network_logs, indent=2)
     except Exception as e:
         logger.error(f"Error getting network logs: {str(e)}")
