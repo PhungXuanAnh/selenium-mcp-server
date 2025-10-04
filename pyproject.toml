@@ -1,6 +1,6 @@
 [project]
 name = "mcp-server-selenium"
-version = "0.1.5"
+version = "0.1.6"
 description = "A Model Context Protocol server for Selenium web automation"
 readme = "README.md"
 authors = [
@@ -21,7 +21,7 @@ dependencies = [
 "Bug Reports" = "https://github.com/PhungXuanAnh/selenium-mcp-server/issues"
 "Source Code" = "https://github.com/PhungXuanAnh/selenium-mcp-server"
 "Documentation" = "https://github.com/PhungXuanAnh/selenium-mcp-server#readme"
-"Changelog" = "https://github.com/PhungXuanAnh/selenium-mcp-server/releases"
+"Changelog" = "https://github.com/PhungXuanAnh/selenium-mcp-server/blob/master/CHANGELOG.md"
 
 [project.scripts]
 selenium-mcp-server = "mcp_server_selenium:main"
