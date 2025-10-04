@@ -2,20 +2,51 @@
 mode: agent
 ---
 
-# Publishing a Python Package to PyPI: Complete Guide
+# AI Agent Guide: Publishing Python Package to PyPI
 
-This document provides a comprehensive step-by-step guide for publishing Python packages to the Python Package Index (PyPI).
+This document provides structured instructions for AI agents (like GitHub Copilot) to publish Python packages to PyPI with proper changelog management and version control.
 
-This project is published to https://pypi.org/project/mcp-server-selenium/
+**Target Project**: https://pypi.org/project/mcp-server-selenium/
+**Repository**: https://github.com/PhungXuanAnh/selenium-mcp-server
 
-## Prerequisites
+## Agent Workflow Summary
 
-Before you start, ensure you have:
+When user requests PyPI publishing, follow this structured approach:
 
-1. **Python 3.7+** installed
-2. **uv** package manager (recommended) or **pip** and **build**
-3. A **PyPI account** (create at https://pypi.org/account/register/)
-4. Your project code ready
+1. 🔍 **Examine Project** - Check pyproject.toml, version, and current state
+2. 📝 **Create/Update Changelog** - Maintain CHANGELOG.md with proper format  
+3. 🔧 **Update Metadata** - Ensure pyproject.toml points to GitHub changelog
+4. 📦 **Build & Publish** - Create distribution files and upload to PyPI
+5. ✅ **Verify & Tag** - Confirm publication and create git tags
+
+## Agent Task Checklist
+
+Use `manage_todo_list` tool to track progress with these tasks:
+- [ ] Examine project configuration (pyproject.toml, version, structure)
+- [ ] Create/update CHANGELOG.md file (Keep a Changelog format)
+- [ ] Update pyproject.toml metadata (changelog URL to GitHub)
+- [ ] Build and publish to PyPI (handle version conflicts)
+- [ ] Verify publication and create git tags
+
+## Prerequisites for Agent
+
+Agent should verify these exist:
+
+1. **Python 3.10+** installed and configured
+2. **build** and **twine** packages available
+3. **PyPI API token** ready for authentication
+4. **Git repository** with proper structure and permissions
+5. **pyproject.toml** with correct metadata
+
+### Agent Environment Setup
+
+```bash
+# Configure Python environment
+configure_python_environment
+
+# Install required packages if needed
+install_python_packages(["build", "twine"])
+```
 
 ### Installing Required Tools
 
@@ -27,125 +58,292 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 pip install build twine
 ```
 
-## Project Structure
+## Agent Actions: Step-by-Step Instructions
 
-Your project should have a structure like this:
+### Step 1: Examine Project Configuration
 
+**Agent Tools to Use:**
+- `read_file` - Check pyproject.toml for version and metadata
+- `mcp_gitkraken_bun_git_log_or_diff` - Check recent commits for context
+- `run_in_terminal` - Check existing git tags: `git tag --sort=-version:refname`
+
+**Key Checks:**
+- Current version in pyproject.toml
+- Existing changelog structure  
+- PyPI metadata completeness
+- Git repository state
+
+### Step 2: Create/Update CHANGELOG.md
+
+**Agent Action:** Use `create_file` or `replace_string_in_file`
+
+**Required Format:**
+```markdown
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), 
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [X.Y.Z] - YYYY-MM-DD
+### Added
+- New features and enhancements
+
+### Changed  
+- Changes in existing functionality
+
+### Fixed
+- Bug fixes and corrections
+
+### Removed
+- Removed or deprecated features
 ```
-your-project/
-├── your_package/
-│   ├── __init__.py
-│   └── main.py
-├── tests/
-│   └── test_main.py
-├── pyproject.toml
-├── README.md
-├── LICENSE
-└── .gitignore
-```
 
-## Configuration Files
+### Step 3: Update pyproject.toml Metadata
 
-### 1. pyproject.toml
-
-This is the main configuration file for modern Python packages:
+**Agent Action:** Ensure changelog URL points to GitHub:
 
 ```toml
-[project]
-name = "your-package-name"
-version = "0.1.0"
-description = "A brief description of your package"
-readme = "README.md"
-authors = [
-    {name = "Your Name", email = "your.email@example.com"},
-]
-license = {text = "MIT"}
-requires-python = ">=3.8"
-dependencies = [
-    "requests>=2.25.0",
-    "click>=8.0.0",
-]
-keywords = ["python", "package", "example"]
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-]
-
 [project.urls]
-"Homepage" = "https://github.com/yourusername/your-package"
-"Bug Reports" = "https://github.com/yourusername/your-package/issues"
-"Source" = "https://github.com/yourusername/your-package"
-
-[project.scripts]
-your-command = "your_package.main:main"
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=6.0",
-    "black>=21.0.0",
-    "flake8>=3.8.0",
-]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["your_package"]
+"Homepage" = "https://github.com/PhungXuanAnh/selenium-mcp-server"
+"Bug Reports" = "https://github.com/PhungXuanAnh/selenium-mcp-server/issues"  
+"Source Code" = "https://github.com/PhungXuanAnh/selenium-mcp-server"
+"Documentation" = "https://github.com/PhungXuanAnh/selenium-mcp-server#readme"
+"Changelog" = "https://github.com/PhungXuanAnh/selenium-mcp-server/blob/master/CHANGELOG.md"
 ```
 
-### 2. README.md
+### Step 4: Build and Publish Process
 
-Create a comprehensive README with:
-- Project description
-- Installation instructions
-- Usage examples
-- Contributing guidelines
+**Agent Tools Required:**
+- `configure_python_environment` - Set up Python environment
+- `run_in_terminal` - Execute build and publish commands
 
-### 3. LICENSE
-
-Choose an appropriate license (MIT, Apache 2.0, GPL, etc.) and include the license file.
-
-## Setting Up PyPI Account
-
-### 1. Create PyPI Account
-
-1. Go to https://pypi.org/account/register/
-2. Fill in your details and verify your email
-3. Enable two-factor authentication (recommended)
-
-### 2. Generate API Token
-
-1. Go to https://pypi.org/manage/account/token/
-2. Click "Add API token"
-3. Set the scope (recommend starting with "Entire account")
-4. Copy the token (starts with `pypi-`)
-
-### 3. Configure Authentication
-
-**Option A: Environment Variable (Recommended)**
+**Build Commands:**
 ```bash
-export UV_PUBLISH_TOKEN=pypi-your-actual-token-here
+# Clean previous builds  
+rm -rf dist/ build/ *.egg-info/
+
+# Build distribution files
+python -m build
+# or /usr/bin/python3 -m build
+
+# Upload to PyPI  
+python -m twine upload dist/*
+# or /usr/bin/python3 -m twine upload dist/*
 ```
 
-**Option B: Store in credentials file**
+**Handle Version Conflicts:**
+If version exists on PyPI:
+1. Increment version in pyproject.toml (e.g., 0.1.5 → 0.1.6)
+2. Update CHANGELOG.md with new version entry
+3. Rebuild and republish
+
+### Step 5: Git Management  
+
+**Agent Actions:**
 ```bash
-# Create ~/.pypirc
-cat > ~/.pypirc << EOF
-[distutils]
-index-servers = pypi
+# Add and commit changes
+git add .
+git commit -m "chore: bump version to X.Y.Z and update changelog"
 
-[pypi]
-username = __token__
-password = pypi-your-actual-token-here
-EOF
+# Create version tag
+git tag vX.Y.Z
+
+# Push changes and tags
+git push origin master
+git push origin vX.Y.Z
 ```
+
+**Use MCP Git tools:**
+- `mcp_gitkraken_bun_git_add_or_commit`
+- `mcp_gitkraken_bun_git_push`
+
+## Expected Project Structure
+
+This selenium-mcp-server project has:
+
+```
+selenium-mcp-server/
+├── src/mcp_server_selenium/
+│   ├── __init__.py
+│   ├── __main__.py  
+│   └── ...
+├── pyproject.toml
+├── README.md
+├── CHANGELOG.md  
+├── LICENSE
+└── dist/ (created during build)
+```
+
+## Agent Tasks: Configuration Management
+
+### Task 1: Verify pyproject.toml Structure
+
+Agent should check/update the main configuration file:
+
+**Required fields for this project:**
+
+```toml
+## Troubleshooting for Agents
+
+### Common Issues and Solutions
+
+**1. Version Already Exists Error**
+```
+ERROR: HTTPError: 400 Bad Request - File already exists
+```
+**Agent Solution:**
+1. Increment version in pyproject.toml
+2. Update CHANGELOG.md with new version
+3. Rebuild and republish
+
+**2. Build Module Not Found**
+```
+python: No module named build
+```
+**Agent Solutions:**
+- Try system Python: `/usr/bin/python3 -m build`
+- Install build: `pip install build` or use `install_python_packages`
+
+**3. Authentication Issues**
+```  
+ERROR: Invalid credentials
+```
+**Agent Action:** User needs to provide PyPI API token when prompted
+
+**4. Permission Denied**
+```
+ERROR: 403 Forbidden
+```
+**Check:** User has proper PyPI account permissions for package
+
+### Agent Best Practices
+
+**1. Always Use Todo Lists**
+```python
+manage_todo_list(operation="write", todoList=[
+    {"id": 1, "title": "Examine project", "status": "not-started"},
+    {"id": 2, "title": "Create changelog", "status": "not-started"},
+    # ... more tasks
+])
+```
+
+**2. Version Increment Strategy**
+- Patch: 0.1.5 → 0.1.6 (bug fixes, minor changes)
+- Minor: 0.1.6 → 0.2.0 (new features, backward compatible)  
+- Major: 0.2.0 → 1.0.0 (breaking changes)
+
+**3. Changelog Entry Template**
+```markdown
+## [X.Y.Z] - YYYY-MM-DD
+### Added
+- Comprehensive CHANGELOG.md file following conventional format
+- Updated PyPI metadata to point to GitHub changelog
+
+### Changed  
+- Updated changelog URL in pyproject.toml to point to GitHub CHANGELOG.md file
+```
+
+**4. Verification Steps**
+- Check PyPI page: `https://pypi.org/project/mcp-server-selenium/`
+- Verify changelog link: `https://github.com/PhungXuanAnh/selenium-mcp-server/blob/master/CHANGELOG.md`
+- Test installation: `pip install mcp-server-selenium`
+```
+
+### Task 2: Create/Update CHANGELOG.md
+
+Agent must maintain a proper changelog following [Keep a Changelog](https://keepachangelog.com/) format:
+
+```markdown
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [X.Y.Z] - YYYY-MM-DD
+### Added
+- New features
+
+### Changed
+- Changes in existing functionality
+
+### Fixed
+- Bug fixes
+
+### Removed
+- Removed features
+```
+
+**Agent Action**: Use `create_file` or `replace_string_in_file` to maintain changelog
+
+### Task 3: Verify Project Files
+
+Agent should confirm these exist:
+- ✅ README.md (comprehensive documentation)
+- ✅ LICENSE (MIT license for this project)
+- ✅ pyproject.toml (proper metadata)
+- ✅ CHANGELOG.md (version history)
+
+## Quick Reference for Agents
+
+### Essential Commands Sequence
+
+```bash
+# 1. Configure environment
+configure_python_environment
+
+# 2. Check current state  
+read_file(pyproject.toml)
+git tag --sort=-version:refname
+
+# 3. Build package
+python -m build
+# or /usr/bin/python3 -m build  
+
+# 4. Upload to PyPI
+python -m twine upload dist/*
+# User will be prompted for API token
+
+# 5. Git operations
+git add .
+git commit -m "chore: bump version and update changelog"
+git tag vX.Y.Z
+git push origin master vX.Y.Z
+```
+
+### MCP Tools Usage
+
+**Git Operations:**
+```python
+# Add and commit
+mcp_gitkraken_bun_git_add_or_commit(action="add", directory=project_path)
+mcp_gitkraken_bun_git_add_or_commit(action="commit", message="...", directory=project_path)
+
+# Push changes
+mcp_gitkraken_bun_git_push(directory=project_path)
+```
+
+**File Operations:**
+```python  
+# Create changelog
+create_file(filePath="CHANGELOG.md", content="...")
+
+# Update pyproject.toml  
+replace_string_in_file(filePath="pyproject.toml", oldString="...", newString="...")
+```
+
+### Success Criteria
+
+Agent should verify:
+- ✅ Package published to PyPI successfully
+- ✅ Changelog URL works on PyPI project page
+- ✅ Git tags created and pushed
+- ✅ Version incremented properly
+- ✅ CHANGELOG.md follows proper format
 
 ## Building the Package
 
@@ -397,10 +595,70 @@ Publishing to PyPI involves:
 
 Following this guide ensures your package is properly published and accessible to the Python community.
 
+---
+
+## 🤖 AGENT SUMMARY: Complete Workflow
+
+When user says "help me publish to PyPI" or similar, follow this exact sequence:
+
+### 1. Initialize Todo List
+```python
+manage_todo_list(operation="write", todoList=[
+    {"id": 1, "title": "Examine project configuration", "description": "Check pyproject.toml, version, and current state", "status": "in-progress"},
+    {"id": 2, "title": "Create CHANGELOG.md file", "description": "Create proper changelog following conventional format", "status": "not-started"},  
+    {"id": 3, "title": "Update pyproject.toml metadata", "description": "Ensure PyPI metadata includes changelog URL pointing to GitHub", "status": "not-started"},
+    {"id": 4, "title": "Build and publish to PyPI", "description": "Build package and upload using API token", "status": "not-started"},
+    {"id": 5, "title": "Verify publication", "description": "Check package published with correct metadata", "status": "not-started"}
+])
+```
+
+### 2. Core Agent Actions
+```python
+# Step 1: Examine
+read_file("pyproject.toml", startLine=1, endLine=50)
+mcp_gitkraken_bun_git_log_or_diff(action="log", directory=project_path)
+run_in_terminal("git tag --sort=-version:refname", explanation="Check existing tags")
+
+# Step 2: Create/Update Changelog  
+create_file(filePath="CHANGELOG.md", content=changelog_template)
+
+# Step 3: Update Metadata
+replace_string_in_file(
+    filePath="pyproject.toml",
+    oldString='"Changelog" = "https://github.com/.../releases"',
+    newString='"Changelog" = "https://github.com/.../blob/master/CHANGELOG.md"'
+)
+
+# Step 4: Build & Publish
+configure_python_environment()
+run_in_terminal("/usr/bin/python3 -m build", explanation="Build package")
+run_in_terminal("/usr/bin/python3 -m twine upload dist/*", explanation="Upload to PyPI")
+
+# Step 5: Git Operations
+mcp_gitkraken_bun_git_add_or_commit(action="add", directory=project_path)
+mcp_gitkraken_bun_git_add_or_commit(action="commit", message="chore: bump version and update changelog", directory=project_path)
+run_in_terminal("git tag vX.Y.Z", explanation="Create version tag")
+mcp_gitkraken_bun_git_push(directory=project_path)
+```
+
+### 3. Key Checkpoints
+- ✅ Version conflicts → increment version in pyproject.toml  
+- ✅ Build module missing → use system Python `/usr/bin/python3`
+- ✅ Authentication → user provides PyPI token when prompted
+- ✅ Verification → check PyPI page and changelog link
+
+### 4. Final Deliverables
+- 📦 Package published to PyPI
+- 📝 CHANGELOG.md created with proper format
+- 🔗 PyPI metadata pointing to GitHub changelog  
+- 🏷️ Git tags created and pushed
+- ✅ All todos marked completed
+
+**Remember:** Always use `manage_todo_list` to track progress and mark todos as completed when done!
+
 ## Resources
 
 - [PyPI Official Guide](https://packaging.python.org/tutorials/packaging-projects/)
-- [Python Packaging User Guide](https://packaging.python.org/)
-- [PEP 621 - pyproject.toml](https://peps.python.org/pep-0621/)
+- [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - [Semantic Versioning](https://semver.org/)
-- [Choose a License](https://choosealicense.com/)
+- [MCP Server Selenium Project](https://github.com/PhungXuanAnh/selenium-mcp-server)
