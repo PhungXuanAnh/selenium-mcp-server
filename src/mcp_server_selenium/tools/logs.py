@@ -1,3 +1,4 @@
+import os
 import json
 import logging
 from typing import Any, Dict, List
@@ -120,15 +121,30 @@ def get_performance_logs(driver: webdriver.Chrome):
     if driver is None:
         return []
     
+    path = "/tmp/performance_logs.json"
+
     try:
-        performance_logs = driver.get_log('performance')
-        
-        # write/append performance logs to a file for debugging
-        with open('/tmp/performance_logs.json', 'a') as f:
-            for entry in performance_logs:
-                f.write(json.dumps(entry) + '\n')
+        # Ensure file exists before opening in r+ mode
+        if not os.path.exists(path):
+            open(path, "w").close()
+
+        with open(path, "r+") as f:
+            try:
+                content = f.read().strip()
+                performance_logs = json.loads(content) if content else []
+            except json.JSONDecodeError:
+                logger.warning("Invalid JSON format in performance_logs.json, resetting file.")
+                performance_logs = []
+
+            performance_logs.extend(driver.get_log("performance"))
+
+            # Rewind + overwrite
+            f.seek(0)
+            f.truncate()
+            json.dump(performance_logs, f, indent=2)
 
         return performance_logs
+
     except Exception as e:
         logger.error(f"Error getting raw performance logs: {str(e)}")
         return []
@@ -204,12 +220,6 @@ def get_network_logs_from_performance_logs(driver: webdriver.Chrome, filter_url_
                 #         'hasError': True
                 #     })
         
-        
-        
-            
-        
-        # Convert dictionary to list of lists
-        
         return network_events
     except Exception as e:
         logger.error(f"Error getting network logs from performance logs: {str(e)}")
@@ -266,7 +276,42 @@ def get_network_logs(filter_url_by_text: str = '', only_errors_log: bool = False
             or other network failures. Default is False (returns all network logs).
     
     Returns:
-        A JSON string containing the network request logs
+        A JSON string containing the network request logs:
+        📌 Main **Network events** you’ll see in `performance` logs:
+        
+        * **Request lifecycle**
+
+        * `Network.requestWillBeSent` — a request is about to be sent (first point you can see URL, headers).
+        * `Network.requestWillBeSentExtraInfo` — extra headers info (sometimes split for security reasons).
+        * `Network.requestServedFromCache` — request was fulfilled from browser cache.
+
+        * **Response lifecycle**
+
+        * `Network.responseReceived` — headers/status arrived.
+        * `Network.responseReceivedExtraInfo` — extra response header info.
+        * `Network.dataReceived` — chunk of response data received.
+        * `Network.loadingFinished` — all response data is received.
+        * `Network.loadingFailed` — request failed (with reason).
+
+        * **WebSocket / EventSource**
+
+        * `Network.webSocketCreated`
+        * `Network.webSocketWillSendHandshakeRequest`
+        * `Network.webSocketHandshakeResponseReceived`
+        * `Network.webSocketFrameSent`
+        * `Network.webSocketFrameReceived`
+        * `Network.webSocketClosed`
+        * `Network.webSocketFrameError`
+
+        * **Other network activity**
+
+        * `Network.webTransportCreated`, `Network.webTransportClosed`
+        * `Network.eventSourceMessageReceived`
+        * `Network.signedExchangeReceived`
+        * `Network.subresourceWebBundleMetadataReceived`
+        * `Network.subresourceWebBundleMetadataError`
+        * `Network.subresourceWebBundleInnerResponseParsed`
+        * `Network.reportingApiReportAdded`, `Network.reportingApiReportUpdated`, `Network.reportingApiEndpointsChanged`
     """
     try:
         driver = ensure_driver_initialized()
@@ -280,3 +325,43 @@ def get_network_logs(filter_url_by_text: str = '', only_errors_log: bool = False
     except Exception as e:
         logger.error(f"Error getting network logs: {str(e)}")
         return f"Error getting network logs: {str(e)}"
+    
+
+@mcp.tool()
+def get_response(request_id: str) -> str:
+    """Retrieve the full response body for a given network request ID.
+    
+    Args:
+        request_id: The ID of the network request to retrieve the response for.
+            It is got from Network.responseReceived event in performance logs
+            from get_network_logs tool.
+            
+    Returns:
+        A JSON string containing the response body and metadata, or an error message.
+    """
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        return f"Failed to initialize WebDriver: {str(e)}"
+    
+    try:
+        if not request_id:
+            return "request_id parameter is required."
+        
+        # Use CDP command to get response body
+        response = driver.execute_cdp_cmd("Network.getResponseBody", {"requestId": request_id})
+        # Main **Network commands** (things you can call via CDP)
+        # Examples:
+        # * `Network.enable`, `Network.disable`
+        # * `Network.getResponseBody`
+        # * `Network.setExtraHTTPHeaders`
+        # * `Network.setUserAgentOverride`
+        # * `Network.emulateNetworkConditions`
+        # * `Network.clearBrowserCache`, `Network.clearBrowserCookies`
+        # * `Network.setBlockedURLs`
+        # * `Network.getCookies`, `Network.setCookie`, `Network.deleteCookies`
+        
+        return json.dumps(response, indent=2)
+    except Exception as e:
+        logger.error(f"Error getting response body for request ID {request_id}: {str(e)}")
+        return f"Error getting response body for request ID {request_id}: {str(e)}"

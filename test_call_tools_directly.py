@@ -1,8 +1,11 @@
 """
-Test script for the get_style_an_element function.
-
-This script tests the get_style_an_element function by calling it directly
-with specified arguments.
+Run this command to test calling the tools directly:
+.venv/bin/python -i test_call_tools_directly.py
+it will attach to python interactive mode after running the script
+and you can call the functions directly like:
+>>> test_get_style_an_element()
+or
+>>> test_get_style_an_element(element_type="p", all_styles=False, computed_style=False)
 """
 
 import sys
@@ -80,7 +83,7 @@ def test_take_screenshot():
     
     return result
 
-def test_get_network_logs_and_classify(filter_url_by_text=""):
+def test_get_network_logs(filter_url_by_text=""):
     """Test getting network logs."""
     print("Testing get_network_logs function...")
     print("=" * 50)
@@ -88,43 +91,9 @@ def test_get_network_logs_and_classify(filter_url_by_text=""):
     # First try without any filter to see all logs
     print("Getting all network logs (no filter)...")
     result_all = get_network_logs()
-    try:
-        import json
-        logs_data = json.loads(result_all) if result_all.startswith('[') else []
-        print(f"All network logs count: {len(logs_data)}")
-        
-        # Let's examine some URLs to understand the filtering issue
-        if logs_data:
-            print("\nSample URLs found in logs:")
-            url_count = 0
-            for request_group in logs_data[:5]:  # Look at first 5 request groups
-                for event in request_group:
-                    if 'url' in event and event['url']:
-                        print(f"  - {event['url']}")
-                        url_count += 1
-                        if url_count >= 10:  # Limit to 10 URLs
-                            break
-                if url_count >= 10:
-                    break
-                    
-            # Look for specific API URLs
-            api_requests = []
-            for request_group in logs_data:
-                for event in request_group:
-                    if 'url' in event and 'api/internal/apps' in event['url']:
-                        api_requests.append(event['url'])
-            
-            print(f"\nAPI requests found: {len(api_requests)}")
-            for api_url in api_requests[:3]:
-                print(f"  - {api_url}")
-                
-    except Exception as e:
-        print(f"Failed to parse network logs as JSON: {e}")
-        logs_data = []
+    import json
+    # print(f"All Network Logs:\n{result_all}")
     
-    print("=" * 50)
-    return result_all
-
 
 if __name__ == "__main__":
     driver = initialize_driver_instance(custom_user_data_dir="/tmp/google-chrome-selenium-mcp-direct")
@@ -133,12 +102,12 @@ if __name__ == "__main__":
     
     # Wait a moment for page to fully load
     import time
-    time.sleep(5)
+    time.sleep(3)
     
     # Test page ready check
     test_check_page_ready()
     
     # Test network logs (only once since logs are cleared after reading)
-    test_get_network_logs_and_classify()
+    test_get_network_logs()
     
     
