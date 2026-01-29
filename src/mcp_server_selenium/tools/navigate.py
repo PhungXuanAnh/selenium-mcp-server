@@ -17,7 +17,7 @@ def navigate(url: str, timeout: int = 60) -> str:
     Args:
         url: The URL to navigate to. Will add https:// if protocol is missing.
         timeout: Maximum time in seconds to wait for the navigation to complete.
-            Default is 60 seconds.
+            Default is 60 seconds. If page load takes longer, a network abort/cancel may occur.
     
     Returns:
         A message confirming navigation started or reporting any issues.
@@ -35,8 +35,7 @@ def navigate(url: str, timeout: int = 60) -> str:
         url = 'https://' + url
         logger.info(f"Added https:// protocol, URL is now {url}")
     
-    # Use a shorter timeout for navigation to avoid MCP timeout
-    navigation_timeout = min(timeout, 5)  # Limit to 5 seconds for initial navigation
+    navigation_timeout = timeout
     driver.set_page_load_timeout(navigation_timeout)
     logger.info(f"Set page load timeout to {navigation_timeout} seconds")
     
