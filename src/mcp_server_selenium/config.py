@@ -4,7 +4,8 @@ LOGGING_CONFIG = {
     "disable_existing_loggers": False,
     "formatters": {
         "verbose": {
-            "format": "[%(asctime)s] [%(pathname)s:%(lineno)d] [%(funcName)s] %(levelname)s: %(message)s"
+            "format": "[%(asctime)s] [%(filename)s:%(lineno)d] %(levelname)s: %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S"
         },
     },
     "handlers": {
@@ -31,5 +32,10 @@ LOGGING_CONFIG = {
             "propagate": False,
             "level": "INFO",
         },
+        # "selenium": {
+        #     "handlers": ["app.DEBUG"],
+        #     "propagate": False,
+        #     "level": "DEBUG",
+        # },
     },
 }

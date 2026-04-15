@@ -1,12 +1,21 @@
 import logging
+import os
+import platform
+import re
+import shutil
 import socket
 import subprocess
+import sys
+import tempfile
 import time
+import urllib.request
+import zipfile
 from datetime import datetime
 from typing import Optional
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
+from selenium.webdriver.chrome.service import Service as ChromeService
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +29,127 @@ class NormalChromeDriver:
         self.profile = profile
         self.driver: Optional[webdriver.Chrome] = None
     
+    @staticmethod
+    def _get_chromedriver_path() -> Optional[str]:
+        """Return path to a compatible chromedriver, downloading to ~/.cache/selenium if needed.
+
+        Uses the same cache location as selenium manager (~/.cache/selenium on all OSes).
+        Bypasses selenium manager entirely to avoid its network-first lookup delays.
+        """
+        # Detect OS/arch -> Chrome for Testing platform string
+        _machine = platform.machine().lower()
+        _platform_map = {
+            ("linux",  "x86_64"):  "linux64",
+            ("linux",  "aarch64"): "linux-arm64",
+            ("darwin", "x86_64"):  "mac-x64",
+            ("darwin", "arm64"):   "mac-arm64",
+            ("win32",  "amd64"):   "win64",
+            ("win32",  "x86_64"):  "win64",
+        }
+        _plat = _platform_map.get((sys.platform, _machine))
+        if not _plat:
+            logger.warning(f"Unsupported platform ({sys.platform}/{_machine}); falling back to selenium manager")
+            return None
+        _exe = "chromedriver.exe" if sys.platform == "win32" else "chromedriver"
+
+        # Detect installed Chrome version
+        _chrome_cmds = ["google-chrome-stable", "google-chrome", "chromium-browser", "chromium"]
+        if sys.platform == "darwin":
+            _chrome_cmds.insert(0, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+        _chrome_version = None
+        for _cmd in _chrome_cmds:
+            try:
+                _out = subprocess.run([_cmd, "--version"], capture_output=True, text=True, timeout=3).stdout
+                _m = re.search(r"(\d+\.\d+\.\d+\.\d+)", _out)
+                if _m:
+                    _chrome_version = _m.group(1)
+                    break
+            except Exception:
+                continue
+
+        if not _chrome_version:
+            logger.warning("Could not detect Chrome version; falling back to selenium manager")
+            return None
+
+        # Cache path: ~/.cache/selenium/chromedriver/{platform}/{version}/{exe}
+        # This is the same path selenium manager uses on all OSes
+        _cache_dir = os.path.join(
+            os.path.expanduser("~"), ".cache", "selenium", "chromedriver", _plat, _chrome_version
+        )
+        _cache_path = os.path.join(_cache_dir, _exe)
+
+        if os.path.isfile(_cache_path):
+            logger.debug(f"Using cached chromedriver {_chrome_version} from {_cache_path}")
+            return _cache_path
+
+        # Not cached — download it ourselves
+        _zip_name = f"chromedriver-{_plat}.zip"
+        _url = f"https://storage.googleapis.com/chrome-for-testing-public/{_chrome_version}/{_plat}/{_zip_name}"
+        _manual_cmd = (
+            f"python -c \""
+            f"import urllib.request,zipfile,os,shutil,tempfile; "
+            f"t=tempfile.mkdtemp(); z=os.path.join(t,'cd.zip'); "
+            f"urllib.request.urlretrieve('{_url}',z); "
+            f"zf=zipfile.ZipFile(z); "
+            f"m=[n for n in zf.namelist() if n.endswith('{_exe}')][0]; "
+            f"zf.extract(m,t); "
+            f"os.makedirs(r'{_cache_dir}',exist_ok=True); "
+            f"shutil.copy(os.path.join(t,m),r'{_cache_path}'); "
+            f"os.chmod(r'{_cache_path}',0o755); "
+            f"print('Done')\""
+        )
+
+        _msg = f"chromedriver {_chrome_version} not in cache. Downloading from {_url} ..."
+        logger.warning(_msg)
+        print(_msg, flush=True)
+
+        try:
+            os.makedirs(_cache_dir, exist_ok=True)
+            _zip_path = os.path.join(tempfile.mkdtemp(), "chromedriver.zip")
+            _last_pct = [-1]
+
+            def _progress(block_count, block_size, total_size):
+                if total_size > 0:
+                    pct = min(100, block_count * block_size * 100 // total_size)
+                    rounded = (pct // 10) * 10
+                    if rounded > _last_pct[0]:
+                        _last_pct[0] = rounded
+                        _p = f"Downloading chromedriver {_chrome_version}: {rounded}%"
+                        logger.info(_p)
+                        print(_p, flush=True)
+
+            urllib.request.urlretrieve(_url, _zip_path, reporthook=_progress)
+
+            with zipfile.ZipFile(_zip_path, "r") as zf:
+                _members = [n for n in zf.namelist() if n.endswith(f"/{_exe}") or n == _exe]
+                if not _members:
+                    raise FileNotFoundError(f"{_exe} not found in zip")
+                _tmp_dir = os.path.dirname(_zip_path)
+                zf.extract(_members[0], _tmp_dir)
+                shutil.copy(os.path.join(_tmp_dir, _members[0]), _cache_path)
+
+            os.chmod(_cache_path, 0o755)
+
+            # Remove old versions from cache (keep only the one we just downloaded)
+            _parent = os.path.dirname(_cache_dir)  # .../chromedriver/{platform}/
+            if os.path.isdir(_parent):
+                for _old in os.listdir(_parent):
+                    _old_path = os.path.join(_parent, _old)
+                    if os.path.isdir(_old_path) and _old != _chrome_version:
+                        shutil.rmtree(_old_path, ignore_errors=True)
+                        logger.info(f"Removed old chromedriver cache: {_old_path}")
+
+            _done = f"chromedriver {_chrome_version} saved to {_cache_path}"
+            logger.info(_done)
+            print(_done, flush=True)
+            return _cache_path
+
+        except Exception as dl_err:
+            _err = f"Auto-download failed: {dl_err}. Download manually:\n  {_manual_cmd}"
+            logger.error(_err)
+            print(_err, flush=True)
+            return None
+
     def check_chrome_debugger_port(self) -> bool:
         """Check if Chrome is running with remote debugging port open"""
         try:
@@ -57,8 +187,8 @@ class NormalChromeDriver:
             
             process = subprocess.Popen(
                 cmd, 
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL, 
+                stderr=subprocess.DEVNULL,
                 start_new_session=True  # Detach from the parent process
             )
             
@@ -109,8 +239,8 @@ class NormalChromeDriver:
             
             process = subprocess.Popen(
                 cmd, 
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL, 
+                stderr=subprocess.DEVNULL,
                 start_new_session=True  # Detach from the parent process
             )
             
@@ -132,8 +262,12 @@ class NormalChromeDriver:
             'performance': 'ALL'
         })
         
+        # Resolve chromedriver from cache (downloading if needed) to bypass selenium manager
+        _driver_path = self._get_chromedriver_path()
+        service = ChromeService(executable_path=_driver_path) if _driver_path else ChromeService()
+        
         # Create the driver
-        self.driver = webdriver.Chrome(options=options)
+        self.driver = webdriver.Chrome(service=service, options=options)
         
         # Maximize the window
         self.driver.maximize_window()
