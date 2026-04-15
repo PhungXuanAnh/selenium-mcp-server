@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Optional
 
 from selenium import webdriver
+from selenium.common.exceptions import NoSuchWindowException, WebDriverException
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
 
@@ -512,6 +513,40 @@ class NormalChromeDriver:
         
         return self.driver
 
+    def _recover_window_handle(self) -> None:
+        """Switch to a valid window if the current one was closed by the user.
+
+        Handles the 'no such window: target window already closed' error that
+        occurs when a user manually closes or changes tabs in Chrome while the
+        MCP server is running.
+        """
+        try:
+            # This will raise NoSuchWindowException if the current tab is gone
+            _ = self.driver.title
+        except (NoSuchWindowException, WebDriverException):
+            try:
+                handles = self.driver.window_handles
+                if handles:
+                    self.driver.switch_to.window(handles[-1])
+                    logger.info(
+                        f"Recovered from stale window — switched to window "
+                        f"{handles[-1]!r} ({len(handles)} open)"
+                    )
+                else:
+                    # All tabs closed but Chrome is still running — open a blank tab
+                    self.driver.execute_script("window.open('about:blank');")
+                    self.driver.switch_to.window(self.driver.window_handles[-1])
+                    logger.info("All tabs were closed — opened a new blank tab")
+            except Exception as e:
+                # Session is completely dead — force reinitialize
+                logger.warning(f"Window recovery failed ({e}), reinitializing driver")
+                try:
+                    self.driver.quit()
+                except Exception:
+                    pass
+                self.driver = None
+                self.driver = self.initialize_driver(custom_user_data_dir=self.user_data_dir)
+
     def ensure_driver_initialized(self) -> webdriver.Chrome:
         """Ensure that the WebDriver is initialized.
         
@@ -532,6 +567,10 @@ class NormalChromeDriver:
             except Exception as e:
                 logger.error(f"Failed to initialize WebDriver: {str(e)}")
                 raise RuntimeError(f"Failed to initialize WebDriver: {str(e)}")
+        else:
+            # Driver exists — verify current window is still valid.
+            # User may have closed the tab manually in Chrome.
+            self._recover_window_handle()
         return self.driver
     
     def quit(self):
