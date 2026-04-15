@@ -45,6 +45,9 @@ def main(user_data_dir_param: str, port_param: int, driver_param: str, profile_p
     # Set global debug_port from command line argument
     if port_param:
         server.debug_port = port_param
+    elif server.debug_port == 0:
+        server.debug_port = server.find_available_port()
+        logger.info(f"Auto-detected available port: {server.debug_port}")
         
     # Set global driver_type from command line argument
     server.driver_type = driver_param

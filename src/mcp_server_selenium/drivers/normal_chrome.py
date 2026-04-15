@@ -1,8 +1,10 @@
+import json
 import logging
 import os
 import platform
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -23,9 +25,9 @@ logger = logging.getLogger(__name__)
 class NormalChromeDriver:
     """Normal Chrome WebDriver implementation."""
     
-    def __init__(self, user_data_dir: str = "", debug_port: int = 9222, profile: str = "Default"):
+    def __init__(self, user_data_dir: str = "", profile: str = "Default"):
         self.user_data_dir = user_data_dir
-        self.debug_port = debug_port
+        self.debug_port = 0
         self.profile = profile
         self.driver: Optional[webdriver.Chrome] = None
     
@@ -150,17 +152,224 @@ class NormalChromeDriver:
             print(_err, flush=True)
             return None
 
-    def check_chrome_debugger_port(self) -> bool:
-        """Check if Chrome is running with remote debugging port open"""
+    def _port_file_path(self) -> Optional[str]:
+        """Path to a file that records the debug port for this user_data_dir."""
+        if self.user_data_dir:
+            return os.path.join(self.user_data_dir, ".selenium_debug_port")
+        return None
+
+    def _is_chrome_on_port(self, port: int, check_user_data_dir: bool = False) -> bool:
+        """Verify a port belongs to Chrome, optionally with matching user_data_dir.
+
+        1. Hits http://127.0.0.1:{port}/json/version to confirm Chrome DevTools.
+        2. If check_user_data_dir is True, inspects process command line to
+           confirm --user-data-dir matches self.user_data_dir.
+        """
+        # Step 1: Confirm it's Chrome via DevTools Protocol
         try:
-            # Try to connect to the port
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(1)
-                result = s.connect_ex(('127.0.0.1', self.debug_port))
-                return result == 0
-        except Exception as e:
-            logger.error(f"Error checking Chrome debugger port: {str(e)}")
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/json/version")
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                data = json.loads(resp.read())
+            browser = data.get("Browser", "")
+            if "Chrome" not in browser and "Chromium" not in browser:
+                logger.debug(f"Port {port} is not Chrome (Browser={browser!r})")
+                return False
+        except Exception:
             return False
+
+        # Step 2: Verify user_data_dir via process command line
+        if not check_user_data_dir or not self.user_data_dir:
+            return True
+
+        port_flag = f"--remote-debugging-port={port}"
+        dir_flag = f"--user-data-dir={self.user_data_dir}"
+        try:
+            if sys.platform == "linux":
+                for entry in os.listdir("/proc"):
+                    if not entry.isdigit():
+                        continue
+                    try:
+                        with open(f"/proc/{entry}/cmdline", "rb") as f:
+                            cmdline = f.read().decode("utf-8", errors="replace")
+                        if port_flag in cmdline and dir_flag in cmdline:
+                            return True
+                    except (PermissionError, FileNotFoundError, ProcessLookupError):
+                        continue
+            else:
+                # macOS / Windows: use ps or trust the DevTools check
+                result = subprocess.run(
+                    ["ps", "aux"], capture_output=True, text=True, timeout=3
+                )
+                for line in result.stdout.splitlines():
+                    if port_flag in line and dir_flag in line:
+                        return True
+        except Exception:
+            return True  # If process inspection fails, trust the DevTools check
+
+        logger.debug(f"Chrome on port {port} does not use user_data_dir={self.user_data_dir}")
+        return False
+
+    def _find_chrome_port_by_user_data_dir(self) -> Optional[int]:
+        """Find the debug port of a running Chrome that uses self.user_data_dir.
+
+        Scans process command lines for --user-data-dir=<our dir> and extracts
+        --remote-debugging-port=<N>.  Returns the port if found and DevTools
+        responds on it, otherwise None.
+        """
+        if not self.user_data_dir:
+            return None
+
+        dir_flag = f"--user-data-dir={self.user_data_dir}"
+        port_re = re.compile(r"--remote-debugging-port=(\d+)")
+
+        candidates: list[int] = []
+        try:
+            if sys.platform == "linux":
+                for entry in os.listdir("/proc"):
+                    if not entry.isdigit():
+                        continue
+                    try:
+                        with open(f"/proc/{entry}/cmdline", "rb") as f:
+                            cmdline = f.read().decode("utf-8", errors="replace")
+                        if dir_flag not in cmdline:
+                            continue
+                        m = port_re.search(cmdline)
+                        if m:
+                            candidates.append(int(m.group(1)))
+                    except (PermissionError, FileNotFoundError, ProcessLookupError):
+                        continue
+            else:
+                result = subprocess.run(
+                    ["ps", "aux"], capture_output=True, text=True, timeout=3
+                )
+                for line in result.stdout.splitlines():
+                    if dir_flag in line:
+                        m = port_re.search(line)
+                        if m:
+                            candidates.append(int(m.group(1)))
+        except Exception:
+            return None
+
+        # Verify each candidate via DevTools Protocol
+        for port in candidates:
+            if self._is_chrome_on_port(port, check_user_data_dir=True):
+                logger.info(
+                    f"Discovered running Chrome on port {port} for {self.user_data_dir}"
+                )
+                return port
+        return None
+
+    def _kill_chrome_with_user_data_dir(self) -> bool:
+        """Kill Chrome processes using self.user_data_dir (e.g. started without debug port).
+
+        This is needed when Chrome is running with our user_data_dir but was not
+        started with --remote-debugging-port, so we cannot connect to it and
+        cannot start a new instance (Chrome locks the user data dir).
+        Sends SIGTERM first, then SIGKILL after 5 s if still alive.
+        Returns True if at least one process was killed.
+        """
+        if not self.user_data_dir:
+            return False
+
+        dir_flag = f"--user-data-dir={self.user_data_dir}"
+        pids: list[int] = []
+
+        try:
+            if sys.platform == "linux":
+                for entry in os.listdir("/proc"):
+                    if not entry.isdigit():
+                        continue
+                    try:
+                        with open(f"/proc/{entry}/cmdline", "rb") as f:
+                            cmdline = f.read().decode("utf-8", errors="replace")
+                        if dir_flag in cmdline and ("chrome" in cmdline.lower() or "chromium" in cmdline.lower()):
+                            pids.append(int(entry))
+                    except (PermissionError, FileNotFoundError, ProcessLookupError):
+                        continue
+            else:
+                result = subprocess.run(
+                    ["ps", "aux"], capture_output=True, text=True, timeout=3
+                )
+                for line in result.stdout.splitlines():
+                    if dir_flag in line and ("chrome" in line.lower() or "chromium" in line.lower()):
+                        parts = line.split()
+                        if len(parts) > 1 and parts[1].isdigit():
+                            pids.append(int(parts[1]))
+        except Exception:
+            return False
+
+        if not pids:
+            return False
+
+        logger.warning(
+            f"Found Chrome process(es) {pids} using {self.user_data_dir} without "
+            f"a debug port we can connect to. Killing to free the user data dir."
+        )
+
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                continue
+            except PermissionError:
+                logger.error(f"No permission to kill PID {pid}")
+                continue
+
+        # Wait up to 5 s for graceful shutdown, then SIGKILL stragglers
+        for _ in range(10):
+            time.sleep(0.5)
+            alive = []
+            for pid in pids:
+                try:
+                    os.kill(pid, 0)  # Check if still alive
+                    alive.append(pid)
+                except ProcessLookupError:
+                    pass
+            if not alive:
+                break
+            pids = alive
+        else:
+            for pid in pids:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                    logger.warning(f"Sent SIGKILL to PID {pid}")
+                except (ProcessLookupError, PermissionError):
+                    pass
+            time.sleep(1)
+
+        logger.info("Killed Chrome process(es) that were blocking the user data dir")
+        return True
+
+    def _read_saved_port(self) -> Optional[int]:
+        """Read a previously saved debug port and verify it's Chrome with our user_data_dir."""
+        pf = self._port_file_path()
+        if pf and os.path.isfile(pf):
+            try:
+                with open(pf) as f:
+                    port = int(f.read().strip())
+                if self._is_chrome_on_port(port, check_user_data_dir=True):
+                    return port
+            except (ValueError, OSError):
+                pass
+        return None
+
+    def _save_port(self) -> None:
+        """Save the current debug port to the user_data_dir."""
+        pf = self._port_file_path()
+        if pf:
+            try:
+                os.makedirs(os.path.dirname(pf), exist_ok=True)
+                with open(pf, "w") as f:
+                    f.write(str(self.debug_port))
+            except OSError:
+                pass
+
+    def check_chrome_debugger_port(self) -> bool:
+        """Check if Chrome is running with remote debugging port open.
+
+        Verifies via Chrome DevTools Protocol endpoint, not just TCP.
+        """
+        return self._is_chrome_on_port(self.debug_port)
 
     def start_chrome(self, custom_user_data_dir: str = "") -> bool:
         """Start Chrome with remote debugging enabled on specified port"""
@@ -198,6 +407,7 @@ class NormalChromeDriver:
             # Check if Chrome started correctly
             if self.check_chrome_debugger_port():
                 logger.info(f"Chrome started successfully on port {self.debug_port}")
+                self._save_port()
                 return True
             else:
                 logger.error("Failed to start Chrome or confirm debugging port is open")
@@ -212,6 +422,26 @@ class NormalChromeDriver:
         # Set user_data_dir if provided
         if custom_user_data_dir:
             self.user_data_dir = custom_user_data_dir
+        
+        # Auto-detect port: saved file -> process scan -> allocate new
+        saved = self._read_saved_port()
+        if saved:
+            self.debug_port = saved
+            logger.info(f"Found existing Chrome on port {saved} for {self.user_data_dir}")
+        else:
+            # Port file missing/stale — scan running processes for Chrome
+            # with our user_data_dir (handles port file out-of-sync)
+            discovered = self._find_chrome_port_by_user_data_dir()
+            if discovered:
+                self.debug_port = discovered
+                self._save_port()  # Update the stale port file
+            else:
+                # No Chrome with debug port found — kill any non-debug Chrome
+                # that locks our user_data_dir before starting a fresh one
+                self._kill_chrome_with_user_data_dir()
+                from mcp_server_selenium.server import find_available_port
+                self.debug_port = find_available_port()
+                logger.info(f"Auto-detected available port: {self.debug_port}")
         
         # Check if Chrome is already running with remote debugging
         if not self.check_chrome_debugger_port():
@@ -249,6 +479,7 @@ class NormalChromeDriver:
             
             if not self.check_chrome_debugger_port():
                 raise RuntimeError("Failed to start Chrome browser")
+            self._save_port()
         else:
             logger.info(f"Chrome already running with remote debugging port {self.debug_port}")
         
@@ -270,7 +501,10 @@ class NormalChromeDriver:
         self.driver = webdriver.Chrome(service=service, options=options)
         
         # Maximize the window
-        self.driver.maximize_window()
+        try:
+            self.driver.maximize_window()
+        except Exception:
+            pass  # Already maximized or window state not changeable
         
         # Set longer page load timeout
         self.driver.set_page_load_timeout(120)

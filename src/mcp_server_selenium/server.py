@@ -1,4 +1,5 @@
 import logging
+import socket
 from typing import Optional, Union
 
 from mcp.server.fastmcp import FastMCP
@@ -13,8 +14,22 @@ driver_instance: Optional[Union[NormalChromeDriver, UndetectedChromeDriver]] = N
 # Global variable for Chrome user data directory
 user_data_dir: str = ""
 
-# Global variable for Chrome debugging port
-debug_port: int = 9222
+# Global variable for Chrome debugging port (0 = auto-detect)
+debug_port: int = 0
+
+
+def find_available_port(start: int = 20000, end: int = 30000) -> int:
+    """Find an available port in the given range."""
+    for port in range(start, end):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.1)
+                result = s.connect_ex(('127.0.0.1', port))
+                if result != 0:  # Port is NOT in use
+                    return port
+        except OSError:
+            continue
+    raise RuntimeError(f"No available port found in range {start}-{end}")
 
 # Global variable for driver type
 driver_type: str = "normal_chromedriver"
@@ -58,7 +73,7 @@ def initialize_driver_instance(custom_user_data_dir: str = "", custom_debug_port
     driver_class = get_driver_factory(driver_type)
     
     # Initialize the driver instance
-    driver_instance = driver_class(user_data_dir=data_dir, debug_port=port, profile=profile_name)
+    driver_instance = driver_class(user_data_dir=data_dir, profile=profile_name)
     
     logger.info(f"Initialized {driver_type} driver instance")
     return driver_instance
