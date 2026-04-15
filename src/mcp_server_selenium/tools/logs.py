@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Any, Dict, List
 from urllib.parse import urlparse
-from ..server import mcp, ensure_driver_initialized
+from ..server import mcp, ensure_driver_initialized, auto_recover_stale_window
 from selenium import webdriver
 
 logger = logging.getLogger(__name__)
@@ -227,6 +227,7 @@ def get_network_logs_from_performance_logs(driver: webdriver.Chrome, filter_url_
 
 
 @mcp.tool()
+@auto_recover_stale_window
 def get_console_logs(log_level: str = "") -> str:
     """Retrieve console logs from the browser with optional filtering by log level.
     
@@ -261,6 +262,7 @@ def get_console_logs(log_level: str = "") -> str:
 
 
 @mcp.tool()
+@auto_recover_stale_window
 def get_network_logs(filter_url_by_text: str = '', only_errors_log: bool = False) -> str:
     """Retrieve network request logs from the browser.
     
@@ -328,6 +330,7 @@ def get_network_logs(filter_url_by_text: str = '', only_errors_log: bool = False
     
 
 @mcp.tool()
+@auto_recover_stale_window
 def get_response(request_id: str) -> str:
     """Retrieve the full response body for a given network request ID.
     

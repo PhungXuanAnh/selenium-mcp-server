@@ -1,11 +1,12 @@
 import logging
 import time
-from ..server import mcp, ensure_driver_initialized
+from ..server import mcp, ensure_driver_initialized, auto_recover_stale_window
 
 logger = logging.getLogger(__name__)
 
 
 @mcp.tool()
+@auto_recover_stale_window
 def check_page_ready(wait_seconds: int = 0) -> str:
     """Check if the current page is fully loaded.
     
@@ -45,5 +46,6 @@ def check_page_ready(wait_seconds: int = 0) -> str:
             return f"Page is still loading (readyState: {ready_state}) at URL: {current_url}"
     
     except Exception as e:
-        logger.error(f"Error checking page ready state: {str(e)}")
-        raise Exception(f"Error checking page ready state: {str(e)}")
+        error_msg = str(e)
+        logger.error(f"Error checking page ready state: {error_msg}")
+        raise Exception(f"Error checking page ready state: {error_msg}")

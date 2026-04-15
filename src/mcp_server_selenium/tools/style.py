@@ -10,12 +10,13 @@ import logging
 from selenium.webdriver.common.by import By
 
 # Import the global mcp instance from the main server module
-from ..server import mcp, ensure_driver_initialized
+from ..server import mcp, ensure_driver_initialized, auto_recover_stale_window
 
 logger = logging.getLogger(__name__)
 
 
 @mcp.tool()
+@auto_recover_stale_window
 def get_style_an_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', return_html: bool = False, xpath: str = '', all_styles: bool = True, computed_style: bool = True) -> str:
     """Get style information for an element identified by text content, class name, or ID.
     

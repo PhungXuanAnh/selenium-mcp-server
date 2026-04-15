@@ -1,3 +1,4 @@
+import functools
 import logging
 import socket
 from typing import Optional, Union
@@ -99,6 +100,51 @@ def ensure_driver_initialized():
     
     # Ensure the actual selenium driver is initialized
     return driver_instance.ensure_driver_initialized()
+
+
+def recover_from_stale_window() -> None:
+    """Recover from a 'no such window' error by switching to a valid window.
+
+    Call this from any tool's except block when the error message contains
+    'no such window' or 'target window already closed'.  It is logged to
+    the file as a WARNING but the error is NOT returned to the MCP client —
+    the tool should retry its operation after calling this.
+    """
+    global driver_instance
+    if driver_instance is not None:
+        logger.warning("Stale window detected — recovering silently")
+        driver_instance._recover_window_handle()
+
+
+def is_stale_window_error(error_msg: str) -> bool:
+    """Check if an error message indicates a stale/closed window."""
+    return "no such window" in error_msg or "target window already closed" in error_msg
+
+
+def auto_recover_stale_window(func):
+    """Decorator: silently recover from 'no such window' errors and retry once.
+
+    If the wrapped function raises an exception whose message indicates a stale
+    window, the decorator will:
+      1. Log the error to the log file (WARNING, not ERROR)
+      2. Call recover_from_stale_window() to switch to a valid tab
+      3. Re-call ensure_driver_initialized() to refresh the driver reference
+      4. Retry the function exactly once
+    If the retry also fails, the exception propagates normally.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            if is_stale_window_error(str(e)):
+                logger.warning(
+                    f"Stale window in {func.__name__}() — recovering and retrying"
+                )
+                recover_from_stale_window()
+                return func(*args, **kwargs)
+            raise
+    return wrapper
 
 
 def get_driver():

@@ -2,12 +2,13 @@ from typing import Optional
 import logging
 from datetime import datetime
 from pathlib import Path
-from ..server import mcp, ensure_driver_initialized
+from ..server import mcp, ensure_driver_initialized, auto_recover_stale_window
 
 logger = logging.getLogger(__name__)
 
 
 @mcp.tool()
+@auto_recover_stale_window
 def take_screenshot(save_path: Optional[str] = None) -> str:
     """Take a screenshot of the current browser window.
     

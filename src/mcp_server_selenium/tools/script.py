@@ -1,11 +1,12 @@
 import json
 import logging
-from ..server import mcp, ensure_driver_initialized
+from ..server import mcp, ensure_driver_initialized, auto_recover_stale_window
 
 logger = logging.getLogger(__name__)
 
 
 @mcp.tool()
+@auto_recover_stale_window
 def run_javascript_in_console(javascript_code: str) -> str:
     """Execute JavaScript code in the browser console.
     
@@ -60,6 +61,7 @@ def run_javascript_in_console(javascript_code: str) -> str:
 
 
 @mcp.tool()
+@auto_recover_stale_window
 def run_javascript_and_get_console_output(javascript_code: str) -> str:
     """Execute JavaScript code and capture both the return value and console output.
     

@@ -11,12 +11,13 @@ import time
 from selenium.webdriver.common.by import By
 
 # Import the global mcp instance from the main server module
-from ..server import mcp, ensure_driver_initialized
+from ..server import mcp, ensure_driver_initialized, auto_recover_stale_window
 
 logger = logging.getLogger(__name__)
 
 
 @mcp.tool()
+@auto_recover_stale_window
 def get_an_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', return_html: bool = False, xpath: str = '') -> str:
     """Get an element identified by text content, class name, or ID.
     
@@ -219,6 +220,7 @@ def get_an_element(text: str = '', class_name: str = '', id: str = '', attribute
 
 
 @mcp.tool()
+@auto_recover_stale_window
 def get_direct_children(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', return_html: bool = False, xpath: str = '', page: int = 1, page_size: int = 5) -> str:
     """Get all direct child nodes of an element identified by text content, class name, or ID.
     
@@ -473,6 +475,7 @@ def get_direct_children(text: str = '', class_name: str = '', id: str = '', attr
 
 
 @mcp.tool()
+@auto_recover_stale_window
 def get_elements(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', page: int = 1, page_size: int = 3, return_html: bool = False, xpath: str = '') -> str:
     """Get multiple elements identified by text content, class name, or ID with pagination.
     
@@ -746,6 +749,7 @@ def get_elements(text: str = '', class_name: str = '', id: str = '', attributes:
 
 
 @mcp.tool()
+@auto_recover_stale_window
 def click_to_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', element_index: int = -1, xpath: str = '') -> str:
     """Click on an element identified by text content, class name, or ID.
     
@@ -934,6 +938,7 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
 
 
 @mcp.tool()
+@auto_recover_stale_window
 def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', input_value: str = '', in_iframe_id: str = '', in_iframe_name: str = '', xpath: str = '') -> str:
     """Set a value to an input element identified by text content, class name, or ID.
     

@@ -2,12 +2,13 @@ import logging
 import time
 from venv import logger
 from selenium.common.exceptions import TimeoutException
-from ..server import mcp, ensure_driver_initialized
+from ..server import mcp, ensure_driver_initialized, auto_recover_stale_window
 
 logger = logging.getLogger(__name__)
 
 
 @mcp.tool()
+@auto_recover_stale_window
 def navigate(url: str, timeout: int = 60) -> str:
     """Navigate to a specified URL with the Chrome browser.
     
