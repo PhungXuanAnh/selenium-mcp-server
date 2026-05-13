@@ -521,9 +521,12 @@ class NormalChromeDriver:
         MCP server is running.
         """
         try:
-            # This will raise NoSuchWindowException if the current tab is gone
+            # This will raise NoSuchWindowException if the current tab is gone.
+            # Catch broad Exception because a dead chromedriver raises raw
+            # urllib3/http.client errors (RemoteDisconnected, ConnectionRefused,
+            # MaxRetryError) that are NOT subclasses of WebDriverException.
             _ = self.driver.title
-        except (NoSuchWindowException, WebDriverException):
+        except Exception:
             try:
                 handles = self.driver.window_handles
                 if handles:

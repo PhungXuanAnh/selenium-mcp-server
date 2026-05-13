@@ -71,9 +71,20 @@ def navigate(url: str, timeout: int = 60) -> str:
         error_msg = str(e)
         logger.error(f"Error after {elapsed:.2f} seconds while navigating to {url}: {error_msg}")
         
-        # Check if the error is due to the browser being closed
-        if "invalid session id" in error_msg and "browser has closed" in error_msg:
-            logger.info("Detected that Chrome has been closed. Attempting to restart Chrome...")
+        # Check if the error is due to the browser/chromedriver being gone.
+        # Cases:
+        #   - "invalid session id ... browser has closed" (Chrome window closed)
+        #   - urllib3 RemoteDisconnected / ConnectionRefused / MaxRetryError
+        #     (chromedriver process died)
+        connection_dead = (
+            ("invalid session id" in error_msg and "browser has closed" in error_msg)
+            or "RemoteDisconnected" in error_msg
+            or "Connection refused" in error_msg
+            or "Connection aborted" in error_msg
+            or "Max retries exceeded" in error_msg
+        )
+        if connection_dead:
+            logger.info("Detected dead Chrome/chromedriver session. Attempting to restart...")
             
             # Import server module to access driver instance and restart functionality
             from .. import server
