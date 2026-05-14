@@ -372,6 +372,107 @@ class NormalChromeDriver:
         """
         return self._is_chrome_on_port(self.debug_port)
 
+    def _ensure_page_target_exists(self) -> None:
+        """Ensure Chrome has at least one `page` target so chromedriver can attach.
+
+        ChromeDriver fails with 'unable to discover open pages' if all open
+        targets are extension service workers / background pages. This happens
+        when the user closes all browser tabs but Chrome itself is still
+        running (e.g. only the DevTools window from --auto-open-devtools-for-tabs
+        remains). Create an about:blank page via the DevTools HTTP endpoint
+        (preferred — bypasses --remote-allow-origins) with a WebSocket
+        fallback for newer Chrome versions that disable /json/new.
+        """
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{self.debug_port}/json", timeout=2
+            ) as resp:
+                targets = json.loads(resp.read())
+        except Exception as e:
+            logger.debug(f"Could not list DevTools targets on port {self.debug_port}: {e}")
+            return
+
+        if any(t.get("type") == "page" for t in targets):
+            return
+
+        logger.warning(
+            f"No `page` targets on port {self.debug_port} "
+            f"({len(targets)} non-page targets). Creating about:blank tab "
+            f"so chromedriver can attach."
+        )
+
+        # Method 1: legacy PUT /json/new (works without --remote-allow-origins)
+        try:
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{self.debug_port}/json/new?about:blank",
+                method="PUT",
+            )
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                if resp.status == 200:
+                    logger.info("Created about:blank page via /json/new")
+                    return
+        except Exception as e:
+            logger.debug(f"/json/new failed ({e}); trying WebSocket fallback")
+
+        # Method 2: Target.createTarget over the browser-level WebSocket.
+        # Requires Chrome to have been started with --remote-allow-origins=*
+        # (or matching origin), which we now do for chrome instances we launch.
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{self.debug_port}/json/version", timeout=2
+            ) as resp:
+                version_info = json.loads(resp.read())
+            ws_url = version_info.get("webSocketDebuggerUrl")
+            if not ws_url:
+                logger.error("Browser webSocketDebuggerUrl missing from /json/version")
+                return
+
+            try:
+                from websocket import create_connection  # websocket-client
+            except ImportError:
+                logger.error(
+                    "websocket-client not installed; cannot create page target. "
+                    "Manually open a tab in Chrome and retry."
+                )
+                return
+
+            ws = create_connection(
+                ws_url,
+                timeout=5,
+                origin=f"http://127.0.0.1:{self.debug_port}",
+            )
+            try:
+                ws.send(json.dumps({
+                    "id": 1,
+                    "method": "Target.createTarget",
+                    "params": {"url": "about:blank"},
+                }))
+                resp_msg = ws.recv()
+                logger.debug(f"Target.createTarget response: {resp_msg}")
+            finally:
+                ws.close()
+
+            # Give Chrome a moment to register the new target
+            for _ in range(20):
+                time.sleep(0.1)
+                try:
+                    with urllib.request.urlopen(
+                        f"http://127.0.0.1:{self.debug_port}/json", timeout=2
+                    ) as resp:
+                        targets = json.loads(resp.read())
+                    if any(t.get("type") == "page" for t in targets):
+                        logger.info("Created about:blank page target via WebSocket")
+                        return
+                except Exception:
+                    continue
+            logger.warning(
+                "Could not create a page target. If Chrome was started without "
+                "--remote-allow-origins=* and /json/new is disabled, please open "
+                "a tab manually in Chrome and retry."
+            )
+        except Exception as e:
+            logger.error(f"Failed to create page target: {e}")
+
     def start_chrome(self, custom_user_data_dir: str = "") -> bool:
         """Start Chrome with remote debugging enabled on specified port"""
         try:
@@ -389,6 +490,7 @@ class NormalChromeDriver:
                 f"--remote-debugging-port={self.debug_port}",
                 f"--user-data-dir={self.user_data_dir}",
                 f"--profile-directory={self.profile}",
+                "--remote-allow-origins=*",  # Allow our DevTools WS reconnects
                 "--no-first-run",
                 "--no-default-browser-check",
                 "--start-maximized",  # Start Chrome maximized
@@ -461,6 +563,7 @@ class NormalChromeDriver:
                 f"--remote-debugging-port={self.debug_port}",
                 f"--user-data-dir={self.user_data_dir}",
                 f"--profile-directory={self.profile}",
+                "--remote-allow-origins=*",  # Allow our DevTools WS reconnects
                 "--no-first-run",
                 "--no-default-browser-check",
                 "--enable-logging",  # Enable logging
@@ -483,7 +586,12 @@ class NormalChromeDriver:
             self._save_port()
         else:
             logger.info(f"Chrome already running with remote debugging port {self.debug_port}")
-        
+
+        # Ensure at least one normal page exists; otherwise chromedriver fails
+        # with "unable to discover open pages" (e.g. when only extension
+        # service workers / DevTools windows are open).
+        self._ensure_page_target_exists()
+
         # Setup capabilities to enable browser logging
         options = ChromeOptions()
         options.debugger_address = f"127.0.0.1:{self.debug_port}"
