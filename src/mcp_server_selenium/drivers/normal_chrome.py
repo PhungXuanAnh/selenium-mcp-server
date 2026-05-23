@@ -372,6 +372,111 @@ class NormalChromeDriver:
         """
         return self._is_chrome_on_port(self.debug_port)
 
+    def _wait_for_debug_port(self, timeout: float = 20.0, interval: float = 0.5) -> bool:
+        """Poll the DevTools port until it responds or timeout elapses."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self.check_chrome_debugger_port():
+                return True
+            time.sleep(interval)
+        return False
+
+    def _detect_linux_display(self) -> Optional[str]:
+        """Detect an active X display by scanning /tmp/.X11-unix sockets."""
+        try:
+            sockets = sorted(os.listdir("/tmp/.X11-unix"))
+        except OSError:
+            return None
+        for name in sockets:
+            if name.startswith("X") and name[1:].isdigit():
+                return f":{name[1:]}"
+        return None
+
+    def _chrome_env(self) -> dict:
+        """Build env for the Chrome subprocess.
+
+        When the MCP server is spawned by a parent (e.g. codex CLI) that does
+        not forward $DISPLAY / $XAUTHORITY, Chrome fails to start with
+        "Missing X server or $DISPLAY". Auto-detect the active X display and
+        a usable Xauthority so Chrome can attach to the user's GUI session.
+        """
+        env = os.environ.copy()
+        if sys.platform == "linux" and not env.get("DISPLAY"):
+            detected = self._detect_linux_display() or ":0"
+            env["DISPLAY"] = detected
+            logger.info(f"DISPLAY not set in environment — defaulting to {detected} for Chrome")
+        if sys.platform == "linux" and not env.get("XAUTHORITY"):
+            home = env.get("HOME") or os.path.expanduser("~")
+            uid = os.getuid()
+            candidates = [
+                os.path.join(home, ".Xauthority"),
+                f"/run/user/{uid}/gdm/Xauthority",
+                f"/run/user/{uid}/.mutter-Xwaylandauth.*",
+            ]
+            # Expand the glob entry
+            import glob as _glob
+            expanded: list[str] = []
+            for c in candidates:
+                if any(ch in c for ch in "*?["):
+                    expanded.extend(_glob.glob(c))
+                else:
+                    expanded.append(c)
+            for candidate in expanded:
+                if os.path.isfile(candidate) and os.access(candidate, os.R_OK):
+                    env["XAUTHORITY"] = candidate
+                    logger.info(f"XAUTHORITY not set — using {candidate} for Chrome")
+                    break
+            else:
+                logger.warning(
+                    "XAUTHORITY not set and no readable Xauthority file found. "
+                    "Chrome may fail to connect to the X server. "
+                    "Pass DISPLAY/XAUTHORITY explicitly via the MCP server env."
+                )
+        return env
+
+    def _open_chrome_stderr_log(self):
+        """Open a temp file to capture Chrome stderr for diagnostics on failure."""
+        try:
+            return tempfile.NamedTemporaryFile(
+                prefix="selenium-mcp-chrome-", suffix=".log", delete=False
+            )
+        except Exception:
+            return subprocess.DEVNULL
+
+    def _log_chrome_failure(self, process, stderr_log) -> None:
+        """Log diagnostic info when Chrome fails to expose the debug port."""
+        log_path = getattr(stderr_log, "name", None)
+        try:
+            if hasattr(stderr_log, "close"):
+                stderr_log.close()
+        except Exception:
+            pass
+
+        exit_code = None
+        try:
+            exit_code = process.poll()
+        except Exception:
+            pass
+
+        tail = ""
+        if log_path and os.path.isfile(log_path):
+            try:
+                with open(log_path, "rb") as f:
+                    data = f.read()[-4000:]
+                tail = data.decode("utf-8", errors="replace").strip()
+            except Exception:
+                pass
+
+        logger.error(
+            "Failed to start Chrome or confirm debugging port %s is open "
+            "(pid=%s, exit_code=%s, stderr_log=%s)%s",
+            self.debug_port,
+            getattr(process, "pid", "?"),
+            exit_code,
+            log_path,
+            f"\nChrome stderr tail:\n{tail}" if tail else "",
+        )
+
     def _ensure_page_target_exists(self) -> None:
         """Ensure Chrome has at least one `page` target so chromedriver can attach.
 
@@ -497,24 +602,23 @@ class NormalChromeDriver:
                 "--auto-open-devtools-for-tabs"  # Auto-open DevTools for new tabs
             ]
             
+            stderr_log = self._open_chrome_stderr_log()
             process = subprocess.Popen(
                 cmd, 
                 stdout=subprocess.DEVNULL, 
-                stderr=subprocess.DEVNULL,
-                start_new_session=True  # Detach from the parent process
+                stderr=stderr_log,
+                start_new_session=True,  # Detach from the parent process
+                env=self._chrome_env(),
             )
             
-            # Wait a moment for Chrome to start
-            time.sleep(3)
-            
-            # Check if Chrome started correctly
-            if self.check_chrome_debugger_port():
+            # Poll for the DevTools port — Chrome may take several seconds to
+            # bind (cold start, slow disk, --auto-open-devtools-for-tabs, etc.)
+            if self._wait_for_debug_port(timeout=20.0):
                 logger.info(f"Chrome started successfully on port {self.debug_port}")
                 self._save_port()
                 return True
-            else:
-                logger.error("Failed to start Chrome or confirm debugging port is open")
-                return False
+            self._log_chrome_failure(process, stderr_log)
+            return False
         except Exception as e:
             logger.error(f"Error starting Chrome: {str(e)}")
             return False
@@ -571,17 +675,19 @@ class NormalChromeDriver:
                 "--auto-open-devtools-for-tabs"  # Auto-open DevTools for new tabs
             ]
             
+            stderr_log = self._open_chrome_stderr_log()
             process = subprocess.Popen(
                 cmd, 
                 stdout=subprocess.DEVNULL, 
-                stderr=subprocess.DEVNULL,
-                start_new_session=True  # Detach from the parent process
+                stderr=stderr_log,
+                start_new_session=True,  # Detach from the parent process
+                env=self._chrome_env(),
             )
             
-            # Wait a moment for Chrome to start
-            time.sleep(3)
-            
-            if not self.check_chrome_debugger_port():
+            # Poll for the DevTools port — Chrome may take several seconds to
+            # bind (cold start, slow disk, --auto-open-devtools-for-tabs, etc.)
+            if not self._wait_for_debug_port(timeout=20.0):
+                self._log_chrome_failure(process, stderr_log)
                 raise RuntimeError("Failed to start Chrome browser")
             self._save_port()
         else:
