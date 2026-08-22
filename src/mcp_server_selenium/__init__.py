@@ -7,6 +7,7 @@ from .server import mcp, quit_driver
 
 # NOTE: Import tools to register them with FastMCP
 from .tools import navigate
+from .tools import tabs
 from .tools import screenshot
 from .tools import page_ready
 from .tools import logs

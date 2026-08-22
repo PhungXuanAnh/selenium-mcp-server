@@ -38,9 +38,20 @@ driver_type: str = "normal_chromedriver"
 # Global variable for Chrome profile
 profile: str = "Default"
 
+MCP_INSTRUCTIONS = """
+This server owns one Selenium WebDriver session with exactly one active tab context.
+All browser tools other than the tab-management tools operate on that active tab.
+Before targeting another tab, call list_tabs and then switch_tab with the returned handle.
+open_tab makes the new tab active; list_tabs preserves the active tab; close_tab returns
+the tab that is active afterward. Do not invoke tab-sensitive browser tools concurrently
+within this server session: calls that switch or use the active tab must be serialized.
+Use separate MCP/WebDriver sessions for truly parallel browser work.
+""".strip()
+
 # Initialize FastMCP
 mcp = FastMCP(
     name="mcp-selenium-sync",
+    instructions=MCP_INSTRUCTIONS,
 )
 
 

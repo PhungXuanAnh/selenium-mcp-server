@@ -16,8 +16,9 @@ def take_screenshot(save_path: Optional[str] = None) -> str:
     as a PNG file. By default, it saves to the current project directory.
     
     Args:
-        save_path: Optional path where the screenshot should be saved. If not provided,
-                  it will save to the current project directory.
+        save_path: Optional exact file path where the screenshot should be saved. Parent
+            directories are created automatically. If omitted, a timestamped PNG file is
+            created in the current project directory.
     
     Returns:
         The path to the saved screenshot file.
@@ -27,21 +28,15 @@ def take_screenshot(save_path: Optional[str] = None) -> str:
     except RuntimeError as e:
         raise RuntimeError(str(e))
     
-    # Determine where to save the screenshot
     if save_path:
-        screenshot_dir = Path(save_path)
+        screenshot_path = Path(save_path).expanduser()
+        if screenshot_path.exists() and screenshot_path.is_dir():
+            raise ValueError("save_path must be a file path, not a directory")
     else:
-        # Use current working directory (project root)
-        screenshot_dir = Path.cwd()
-    
-    # Create the directory if it doesn't exist
-    screenshot_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Generate a filename automatically
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"screenshot_{timestamp}.png"
-    
-    screenshot_path = screenshot_dir / filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        screenshot_path = Path.cwd() / f"screenshot_{timestamp}.png"
+
+    screenshot_path.parent.mkdir(parents=True, exist_ok=True)
     driver.save_screenshot(str(screenshot_path))
     
     return f"Screenshot saved to {screenshot_path}"

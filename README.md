@@ -76,6 +76,7 @@ PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/ch
 # 2. Features
 
 - **Web Navigation**: Navigate to URLs with timeout control and page readiness checking
+- **Multiple Tabs**: List, open, switch, and close browser tabs by window handle
 - **Element Discovery & Interaction**: Find elements by multiple criteria (text, class, ID, attributes, XPath) and interact with them through clicking and input value setting
 - **Advanced Element Querying**: Get single elements, multiple elements with pagination, and direct child nodes with comprehensive filtering options
 - **Screenshots**: Capture full-page screenshots of the current browser window
@@ -94,7 +95,11 @@ The MCP server provides the following tools:
 ## 3.1. Navigation and Page Management
 - `navigate(url, timeout)` - Navigate to a specified URL with Chrome browser
 - `check_page_ready(wait_seconds)` - Check if the current page is fully loaded with optional wait
-- `take_screenshot()` - Take a screenshot of the current browser window
+- `list_tabs()` - List all browser tabs and identify the active tab
+- `open_tab(url=None)` - Open a new tab and optionally navigate it to a URL
+- `switch_tab(handle)` - Switch to a tab using a handle returned by `list_tabs`
+- `close_tab(handle=None)` - Close a specific tab, or the active tab when no handle is provided
+- `take_screenshot(save_path)` - Take a screenshot; `save_path` is the exact output file path, or omit it to generate a timestamped PNG in the current directory
 
 ## 3.2. Element Interaction
 - `get_an_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name, return_html, xpath)` - Get an element identified by various criteria
@@ -354,7 +359,8 @@ If you open the `.vscode/mcp.json` file, you can see the MCP server status at th
 
 2. **Take a screenshot**:
    - Tool: `take_screenshot`
-   - Result: Screenshot saved to `~/selenium-mcp/screenshot/`
+   - Save path: `/tmp/example.png`
+   - Result: Screenshot saved to `/tmp/example.png`
 
 3. **Fill a form**:
    - Tool: `fill_input`
@@ -479,6 +485,20 @@ PYTHONPATH=src python -m mcp_server_selenium
 3. Make your changes
 4. Add tests if applicable
 5. Submit a pull request
+
+## 10.1. Testing
+
+Run the focused tests without starting Chrome:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p "test_*.py" -v
+```
+
+Run the MCP stdio end-to-end test, which starts the real server and Chrome with an isolated temporary profile:
+
+```bash
+.venv/bin/python tests/mcp_stdio_e2e.py -v
+```
 
 # 11. Support
 
