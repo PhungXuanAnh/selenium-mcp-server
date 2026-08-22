@@ -293,7 +293,7 @@ cli = [
 
 [[package]]
 name = "mcp-server-selenium"
-version = "0.1.5"
+version = "0.1.8"
 source = { editable = "." }
 dependencies = [
     { name = "click" },

@@ -79,7 +79,7 @@ PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/ch
 - **Multiple Tabs**: List, open, switch, and close browser tabs by window handle
 - **Element Discovery & Interaction**: Find elements by multiple criteria (text, class, ID, attributes, XPath) and interact with them through clicking and input value setting
 - **Advanced Element Querying**: Get single elements, multiple elements with pagination, and direct child nodes with comprehensive filtering options
-- **Screenshots**: Capture full-page screenshots of the current browser window
+- **Screenshots**: Capture named PNG screenshots of the active tab in the default workspace location or an explicit output directory
 - **Element Styling**: Retrieve CSS styles and computed style information for any element
 - **JavaScript Execution**: Execute custom JavaScript code in browser console with optional console output capture
 - **Browser Logging**: Access console logs (with level filtering) and network request logs (with URL filtering and error filtering)
@@ -99,7 +99,7 @@ The MCP server provides the following tools:
 - `open_tab(url=None)` - Open a new tab and optionally navigate it to a URL
 - `switch_tab(handle)` - Switch to a tab using a handle returned by `list_tabs`
 - `close_tab(handle=None)` - Close a specific tab, or the active tab when no handle is provided
-- `take_screenshot(save_path)` - Take a screenshot; `save_path` is the exact output file path, or omit it to generate a timestamped PNG in the current directory
+- `take_screenshot(file_name, directory="tmp/selenium-screenshot")` - Take a screenshot of the active tab. A descriptive `file_name` is required; `.png` is added when omitted. When the Agent knows its current workspace path, it should prefer an absolute `directory` inside that workspace so the destination does not depend on the MCP server cwd. Otherwise, omit `directory` to use the configured workspace default. Existing files receive a numeric suffix instead of being overwritten.
 
 ## 3.2. Element Interaction
 - `get_an_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name, return_html, xpath)` - Get an element identified by various criteria
@@ -258,6 +258,7 @@ tailf /tmp/selenium-mcp.log
 
 - `--port`: Chrome remote debugging port (default: 9222)
 - `--user_data_dir`: Chrome user data directory (default: auto-generated in /tmp)
+- `--workspace_root`: Base directory for relative screenshot directories (default: the server startup directory). It is optional; absolute screenshot directories do not use it.
 - `-v, --verbose`: Increase verbosity (use multiple times for more details)
 
 ## 5.3. Using with MCP Clients
@@ -312,6 +313,7 @@ Using source code directly:
       "args": [
         "-m", "mcp_server_selenium",
         "--user_data_dir=/home/user/.config/google-chrome-selenium-mcp-source",
+        "--workspace_root=/path/to/workspace",
         "--port=9226"
       ],
       "env": {
@@ -359,8 +361,9 @@ If you open the `.vscode/mcp.json` file, you can see the MCP server status at th
 
 2. **Take a screenshot**:
    - Tool: `take_screenshot`
-   - Save path: `/tmp/example.png`
-   - Result: Screenshot saved to `/tmp/example.png`
+   - File name: `example-home`
+   - Directory: prefer `<absolute-workspace-path>/tmp/selenium-screenshot`; omit it when the workspace path is unavailable
+   - Result: Screenshot saved to `<absolute-workspace-path>/tmp/selenium-screenshot/example-home.png`
 
 3. **Fill a form**:
    - Tool: `fill_input`

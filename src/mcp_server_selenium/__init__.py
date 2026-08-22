@@ -1,6 +1,7 @@
 import click
 import logging
 from logging.config import dictConfig
+from pathlib import Path
 
 from .config import LOGGING_CONFIG
 from .server import mcp, quit_driver
@@ -27,8 +28,26 @@ logger = logging.getLogger(__name__)
               type=click.Choice(["normal_chromedriver", "undetected_chrome_driver"]),
               help="Type of Chrome driver to use (default: normal_chromedriver)")
 @click.option("--profile", "profile_param", default="Default", help="Chrome profile to use (default: Default)")
+@click.option(
+    "--workspace_root",
+    "workspace_root_param",
+    type=click.Path(
+        exists=True,
+        file_okay=False,
+        path_type=Path,
+        resolve_path=True,
+    ),
+    help="Base for relative browser artifact paths (default: server startup directory)",
+)
 @click.option("-v", "--verbose", count=True)
-def main(user_data_dir_param: str, port_param: int, driver_param: str, profile_param: str, verbose: int) -> None:
+def main(
+    user_data_dir_param: str,
+    port_param: int,
+    driver_param: str,
+    profile_param: str,
+    workspace_root_param: Path,
+    verbose: int,
+) -> None:
     """Selenium MCP Server - Synchronous version"""
     # Import server module to access global variables
     from . import server
@@ -42,6 +61,9 @@ def main(user_data_dir_param: str, port_param: int, driver_param: str, profile_p
     # Set global user_data_dir from command line argument
     if user_data_dir_param:
         server.user_data_dir = user_data_dir_param
+
+    if workspace_root_param:
+        server.workspace_root = workspace_root_param
         
     # Set global debug_port from command line argument
     if port_param:

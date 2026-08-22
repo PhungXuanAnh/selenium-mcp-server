@@ -5,7 +5,7 @@
         "args": [
             "-m",
             "mcp_server_selenium",
-            "--user_data_dir=/home/xuananh/.config/google-chrome-selenium-mcp-direct"
+            "--user_data_dir=/home/xuananh/.config/google-chrome-selenium-mcp-direct",
         ],
         "env": {
           "PYTHONPATH": "/home/xuananh/repo/selenium-mcp-server/src"

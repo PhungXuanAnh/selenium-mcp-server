@@ -106,7 +106,7 @@ print(f"Click result: {click_result}")
 ```python
 # Take a screenshot
 print("\n=== Taking screenshot ===")
-screenshot_result = take_screenshot()
+screenshot_result = take_screenshot("google-home")
 print(f"Screenshot result: {screenshot_result}")
 ```
 
@@ -177,7 +177,7 @@ def main():
         
         # Step 6: Take screenshot
         print("\n=== Step 6: Taking screenshot ===")
-        screenshot = take_screenshot()
+        screenshot = take_screenshot("google-search-page")
         print(f"Screenshot: {screenshot}")
         
         print("\n=== All steps completed successfully! ===")
@@ -205,7 +205,7 @@ To run these examples:
 - Make sure Chrome is available on your system
 - The tools will handle iframe switching, error handling, and driver management automatically
 - All results are returned as JSON strings that you can parse if needed
-- Screenshots are saved to the `~/selenium-mcp/screenshot/` directory
+- Prefer an absolute `directory` inside the current workspace when its path is known; otherwise screenshots default to `<workspace>/tmp/selenium-screenshot/`
 
 ## Common Use Cases
 

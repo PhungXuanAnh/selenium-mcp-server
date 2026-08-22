@@ -1,6 +1,7 @@
 import functools
 import logging
 import socket
+from pathlib import Path
 from typing import Optional, Union
 
 from mcp.server.fastmcp import FastMCP
@@ -17,6 +18,14 @@ user_data_dir: str = ""
 
 # Global variable for Chrome debugging port (0 = auto-detect)
 debug_port: int = 0
+
+# Base directory used to resolve relative browser artifact paths.
+workspace_root: Path = Path.cwd().resolve()
+
+
+def get_workspace_root() -> Path:
+    """Return the configured workspace root as an absolute resolved path."""
+    return workspace_root.resolve()
 
 
 def find_available_port(start: int = 20000, end: int = 30000) -> int:
@@ -46,6 +55,10 @@ open_tab makes the new tab active; list_tabs preserves the active tab; close_tab
 the tab that is active afterward. Do not invoke tab-sensitive browser tools concurrently
 within this server session: calls that switch or use the active tab must be serialized.
 Use separate MCP/WebDriver sessions for truly parallel browser work.
+When calling take_screenshot, always supply a short semantic file_name describing
+the captured page or state. If you know your current workspace path, prefer an absolute
+directory inside that workspace so the destination does not depend on the MCP server's
+working directory. Otherwise omit directory to use the configured workspace default.
 """.strip()
 
 # Initialize FastMCP

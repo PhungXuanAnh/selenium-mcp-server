@@ -6,12 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-08-22
+
 ### Added
 - Tools to list, open, switch, and close browser tabs
-- MCP stdio end-to-end coverage for tab management and exact screenshot paths
+- MCP stdio end-to-end coverage for tab management and named screenshot artifacts
+
+### Changed
+- Replace screenshot `save_path` with a required semantic `file_name` and optional `directory`; guide Agents to prefer absolute directories inside their current workspace, default to `<workspace>/tmp/selenium-screenshot` when omitted, normalize PNG names, and preserve existing artifacts with numeric suffixes
 
 ### Fixed
-- Treat screenshot `save_path` as the exact output file instead of a directory containing an auto-generated filename
+- Pin Hatchling below 1.32 so release builds use Core Metadata accepted by current PyPI tooling
 
 ## [0.1.6] - 2025-10-04
 ### Added

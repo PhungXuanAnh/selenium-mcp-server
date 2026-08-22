@@ -72,23 +72,63 @@ class TabAndScreenshotTests(unittest.TestCase):
         self.assertEqual(["tab-1"], closed["remaining_handles"])
         self.assertEqual("tab-1", driver.current_window_handle)
 
+    @patch("mcp_server_selenium.tools.screenshot.get_workspace_root")
     @patch("mcp_server_selenium.tools.screenshot.ensure_driver_initialized")
-    def test_exact_and_default_screenshot_paths(self, ensure_driver_initialized):
+    def test_named_screenshot_paths(
+        self,
+        ensure_driver_initialized,
+        get_workspace_root,
+    ):
         driver = Mock()
         ensure_driver_initialized.return_value = driver
+        driver.save_screenshot.side_effect = lambda path: Path(path).touch()
+
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            tempfile.TemporaryDirectory() as absolute_temp_dir,
+        ):
+            workspace_root = Path(temp_dir)
+            get_workspace_root.return_value = workspace_root
+
+            take_screenshot("checkout-ready")
+            take_screenshot("checkout-ready")
+            take_screenshot("details.PNG", "evidence/checkout")
+            take_screenshot("external-location", absolute_temp_dir)
+
+            saved_paths = [
+                Path(call.args[0]) for call in driver.save_screenshot.call_args_list
+            ]
+            self.assertEqual(
+                [
+                    workspace_root / "tmp/selenium-screenshot/checkout-ready.png",
+                    workspace_root / "tmp/selenium-screenshot/checkout-ready-2.png",
+                    workspace_root / "evidence/checkout/details.png",
+                    Path(absolute_temp_dir) / "external-location.png",
+                ],
+                saved_paths,
+            )
+
+    @patch("mcp_server_selenium.tools.screenshot.get_workspace_root")
+    @patch("mcp_server_selenium.tools.screenshot.ensure_driver_initialized")
+    def test_screenshot_rejects_unsafe_paths(
+        self,
+        ensure_driver_initialized,
+        get_workspace_root,
+    ):
+        ensure_driver_initialized.return_value = Mock()
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            target = Path(temp_dir) / "nested" / "shot.png"
-            take_screenshot(str(target))
-            take_screenshot()
+            get_workspace_root.return_value = Path(temp_dir)
 
-            exact_path = Path(driver.save_screenshot.call_args_list[0].args[0])
-            default_path = Path(driver.save_screenshot.call_args_list[1].args[0])
-            self.assertEqual(target, exact_path)
-            self.assertTrue(target.parent.is_dir())
-            self.assertFalse(target.is_dir())
-            self.assertEqual(Path.cwd(), default_path.parent)
-            self.assertTrue(default_path.name.startswith("screenshot_"))
+            for file_name in ("", "../escape", "nested/shot", "shot.jpg"):
+                with self.subTest(file_name=file_name):
+                    with self.assertRaises(ValueError):
+                        take_screenshot(file_name)
+
+            for directory in ("../outside", "bad\\path"):
+                with self.subTest(directory=directory):
+                    with self.assertRaises(ValueError):
+                        take_screenshot("safe-name", directory)
 
 
 if __name__ == "__main__":

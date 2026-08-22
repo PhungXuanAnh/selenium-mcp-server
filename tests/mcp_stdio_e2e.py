@@ -27,7 +27,15 @@ class McpStdioE2ETest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             profile_path = temp_path / "chrome-profile"
-            screenshot_path = temp_path / "screenshots" / "exact.png"
+            workspace_path = temp_path / "workspace"
+            workspace_path.mkdir()
+            screenshot_path = (
+                workspace_path / "tmp/selenium-screenshot/e2e-active-tab.png"
+            )
+            absolute_screenshot_directory = temp_path / "absolute-screenshots"
+            absolute_screenshot_path = (
+                absolute_screenshot_directory / "e2e-absolute-directory.png"
+            )
             environment = dict(os.environ, PYTHONPATH=str(PROJECT_ROOT / "src"))
             server = StdioServerParameters(
                 command=sys.executable,
@@ -36,6 +44,8 @@ class McpStdioE2ETest(unittest.TestCase):
                     "mcp_server_selenium",
                     "--user_data_dir",
                     str(profile_path),
+                    "--workspace_root",
+                    str(workspace_path),
                 ],
                 env=environment,
                 cwd=PROJECT_ROOT,
@@ -49,6 +59,23 @@ class McpStdioE2ETest(unittest.TestCase):
                             tool.name: tool for tool in (await session.list_tools()).tools
                         }
                         self.assertTrue(REQUIRED_TOOLS <= discovered_tools.keys())
+                        screenshot_schema = discovered_tools["take_screenshot"].inputSchema
+                        screenshot_description = (
+                            discovered_tools["take_screenshot"].description or ""
+                        )
+                        normalized_screenshot_description = " ".join(
+                            screenshot_description.split()
+                        )
+                        self.assertIn("file_name", screenshot_schema["required"])
+                        self.assertNotIn("save_path", screenshot_schema["properties"])
+                        self.assertIn(
+                            "Prefer an absolute directory inside your current workspace",
+                            normalized_screenshot_description,
+                        )
+                        self.assertEqual(
+                            "tmp/selenium-screenshot",
+                            screenshot_schema["properties"]["directory"]["default"],
+                        )
                         self.assertIn(
                             "exactly one active tab context", initialization.instructions or ""
                         )
@@ -93,7 +120,16 @@ class McpStdioE2ETest(unittest.TestCase):
                         )
                         screenshot_result = self._result_text(
                             await session.call_tool(
-                                "take_screenshot", {"save_path": str(screenshot_path)}
+                                "take_screenshot", {"file_name": "e2e-active-tab"}
+                            )
+                        )
+                        absolute_screenshot_result = self._result_text(
+                            await session.call_tool(
+                                "take_screenshot",
+                                {
+                                    "file_name": "e2e-absolute-directory",
+                                    "directory": str(absolute_screenshot_directory),
+                                },
                             )
                         )
 
@@ -102,6 +138,10 @@ class McpStdioE2ETest(unittest.TestCase):
                         self.assertIn(str(screenshot_path), screenshot_result)
                         self.assertTrue(screenshot_path.is_file())
                         self.assertFalse(screenshot_path.is_dir())
+                        self.assertIn(
+                            str(absolute_screenshot_path), absolute_screenshot_result
+                        )
+                        self.assertTrue(absolute_screenshot_path.is_file())
             finally:
                 NormalChromeDriver(user_data_dir=str(profile_path))._kill_chrome_with_user_data_dir()
 
