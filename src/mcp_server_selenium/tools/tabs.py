@@ -13,7 +13,7 @@ def _current_tab(driver) -> dict[str, object]:
     }
 
 
-@mcp.tool()
+@mcp.tool(description="List all tabs and the active handle without changing the final active tab. Serialize tab-sensitive calls in this server session.")
 @auto_recover_stale_window
 def list_tabs() -> str:
     """List all browser tabs and identify the currently active tab.
@@ -42,7 +42,7 @@ def list_tabs() -> str:
     return json.dumps({"active_handle": active_handle, "tabs": tabs}, indent=2)
 
 
-@mcp.tool()
+@mcp.tool(description="Open and activate a new tab, optionally loading a URL. Serialize tab-sensitive calls in this server session.")
 @auto_recover_stale_window
 def open_tab(url: Optional[str] = None) -> str:
     """Open a new browser tab and optionally navigate it to a URL.
@@ -68,7 +68,7 @@ def open_tab(url: Optional[str] = None) -> str:
     return json.dumps(_current_tab(driver), indent=2)
 
 
-@mcp.tool()
+@mcp.tool(description="Activate a tab by a handle from list_tabs. Serialize the switch and dependent calls in this server session.")
 @auto_recover_stale_window
 def switch_tab(handle: str) -> str:
     """Switch to an existing browser tab by its window handle.
@@ -91,7 +91,7 @@ def switch_tab(handle: str) -> str:
     return json.dumps(_current_tab(driver), indent=2)
 
 
-@mcp.tool()
+@mcp.tool(description="Close a chosen or active tab and activate a remaining tab. The final tab cannot be closed; serialize tab-sensitive calls.")
 @auto_recover_stale_window
 def close_tab(handle: Optional[str] = None) -> str:
     """Close a browser tab while keeping another tab active.

@@ -5,7 +5,7 @@ from ..server import mcp, ensure_driver_initialized, auto_recover_stale_window
 logger = logging.getLogger(__name__)
 
 
-@mcp.tool()
+@mcp.tool(description="Add or replace one localStorage value using string/JSON and explicit empty-value options.")
 @auto_recover_stale_window
 def local_storage_add(key: str, string_value: str = '', object_value: dict = {}, create_empty_string: bool = False, create_empty_object: bool = False) -> str:
     """Add or update a key-value pair in browser's local storage.
@@ -65,7 +65,7 @@ def local_storage_add(key: str, string_value: str = '', object_value: dict = {},
         return error_msg
 
 
-@mcp.tool()
+@mcp.tool(description="Read one localStorage value by key.")
 @auto_recover_stale_window
 def local_storage_read(key: str) -> str:
     """Read a value from browser's local storage by key.
@@ -100,7 +100,7 @@ def local_storage_read(key: str) -> str:
         return error_msg
 
 
-@mcp.tool()
+@mcp.tool(description="Remove one localStorage value by key.")
 @auto_recover_stale_window
 def local_storage_remove(key: str) -> str:
     """Remove a key-value pair from browser's local storage.
@@ -146,7 +146,7 @@ def local_storage_remove(key: str) -> str:
         return error_msg
 
 
-@mcp.tool()
+@mcp.tool(description="Read all localStorage key-value pairs.")
 @auto_recover_stale_window
 def local_storage_read_all() -> str:
     """Read all key-value pairs from browser's local storage.
@@ -186,7 +186,7 @@ def local_storage_read_all() -> str:
         return error_msg
 
 
-@mcp.tool()
+@mcp.tool(description="Remove all localStorage values.")
 @auto_recover_stale_window
 def local_storage_remove_all() -> str:
     """Remove all key-value pairs from browser's local storage.

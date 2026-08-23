@@ -7,7 +7,7 @@ from ..server import mcp, ensure_driver_initialized, auto_recover_stale_window
 logger = logging.getLogger(__name__)
 
 
-@mcp.tool()
+@mcp.tool(description="Navigate the active tab to a URL, adding https:// when no supported scheme is present. The timeout limits page loading.")
 @auto_recover_stale_window
 def navigate(url: str, timeout: int = 60) -> str:
     """Navigate to a specified URL with the Chrome browser.
@@ -42,11 +42,6 @@ def navigate(url: str, timeout: int = 60) -> str:
     
     start_time = time.time()
     try:
-        # remove performance log file if exists before navigation
-        import os
-        if os.path.exists('/tmp/performance_logs.json'):
-            os.remove('/tmp/performance_logs.json')
-
         # Start navigation
         logger.info(f"Calling driver.get({url})")
         driver.get(url)

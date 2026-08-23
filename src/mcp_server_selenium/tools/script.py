@@ -1,11 +1,12 @@
 import json
 import logging
 from ..server import mcp, ensure_driver_initialized, auto_recover_stale_window
+from .logs import CONSOLE_LOG_DELIVERY_WAIT_SECONDS, read_driver_logs
 
 logger = logging.getLogger(__name__)
 
 
-@mcp.tool()
+@mcp.tool(description="Execute JavaScript in the active tab and return its value without intentionally reading buffered console logs.")
 @auto_recover_stale_window
 def run_javascript_in_console(javascript_code: str) -> str:
     """Execute JavaScript code in the browser console.
@@ -60,7 +61,7 @@ def run_javascript_in_console(javascript_code: str) -> str:
         return error_msg
 
 
-@mcp.tool()
+@mcp.tool(description="Drain old console logs, execute JavaScript, then return its value and newly captured console output.")
 @auto_recover_stale_window
 def run_javascript_and_get_console_output(javascript_code: str) -> str:
     """Execute JavaScript code and capture both the return value and console output.
@@ -84,7 +85,7 @@ def run_javascript_and_get_console_output(javascript_code: str) -> str:
     
     try:
         # Clear any existing console logs first
-        driver.get_log('browser')
+        read_driver_logs(driver, 'browser')
         
         # Execute the JavaScript code
         result = driver.execute_script(javascript_code)
@@ -92,7 +93,11 @@ def run_javascript_and_get_console_output(javascript_code: str) -> str:
         # Get console logs that were generated during execution
         console_logs = []
         try:
-            browser_logs = driver.get_log('browser')
+            browser_logs = read_driver_logs(
+                driver,
+                'browser',
+                wait_seconds=CONSOLE_LOG_DELIVERY_WAIT_SECONDS,
+            )
             for log_entry in browser_logs:
                 if log_entry['source'] == 'console-api':
                     console_logs.append({

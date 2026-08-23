@@ -5,7 +5,7 @@ from ..server import mcp, ensure_driver_initialized, auto_recover_stale_window
 logger = logging.getLogger(__name__)
 
 
-@mcp.tool()
+@mcp.tool(description="Optionally wait, then report the active page's document.readyState.")
 @auto_recover_stale_window
 def check_page_ready(wait_seconds: int = 0) -> str:
     """Check if the current page is fully loaded.

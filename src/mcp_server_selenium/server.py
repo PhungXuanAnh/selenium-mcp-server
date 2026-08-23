@@ -22,10 +22,52 @@ debug_port: int = 0
 # Base directory used to resolve relative browser artifact paths.
 workspace_root: Path = Path.cwd().resolve()
 
+# Controlled Chrome download destination. ``None`` means workspace default.
+download_directory: Optional[Path] = None
+_configured_download_session: str = ""
+
 
 def get_workspace_root() -> Path:
     """Return the configured workspace root as an absolute resolved path."""
     return workspace_root.resolve()
+
+
+def get_download_directory() -> Path:
+    """Return the configured absolute Chrome download destination."""
+    if download_directory is None:
+        return (get_workspace_root() / "tmp/selenium-downloads").resolve()
+    requested = Path(download_directory).expanduser()
+    if requested.is_absolute():
+        return requested.resolve()
+    if ".." in requested.parts:
+        raise ValueError("relative download directory cannot contain path traversal")
+    return (get_workspace_root() / requested).resolve()
+
+
+def configure_download_directory(driver) -> Path:
+    """Apply one download directory to an attached or newly started Chrome session."""
+    global _configured_download_session
+    destination = get_download_directory()
+    destination.mkdir(parents=True, exist_ok=True)
+    session = str(getattr(driver, "session_id", id(driver)))
+    if session == _configured_download_session:
+        return destination
+    try:
+        driver.execute_cdp_cmd(
+            "Browser.setDownloadBehavior",
+            {
+                "behavior": "allow",
+                "downloadPath": str(destination),
+                "eventsEnabled": True,
+            },
+        )
+    except Exception:
+        driver.execute_cdp_cmd(
+            "Page.setDownloadBehavior",
+            {"behavior": "allow", "downloadPath": str(destination)},
+        )
+    _configured_download_session = session
+    return destination
 
 
 def find_available_port(start: int = 20000, end: int = 30000) -> int:
@@ -48,23 +90,34 @@ driver_type: str = "normal_chromedriver"
 profile: str = "Default"
 
 MCP_INSTRUCTIONS = """
-This server owns one Selenium WebDriver session with exactly one active tab context.
-All browser tools other than the tab-management tools operate on that active tab.
-Before targeting another tab, call list_tabs and then switch_tab with the returned handle.
-open_tab makes the new tab active; list_tabs preserves the active tab; close_tab returns
-the tab that is active afterward. Do not invoke tab-sensitive browser tools concurrently
-within this server session: calls that switch or use the active tab must be serialized.
-Use separate MCP/WebDriver sessions for truly parallel browser work.
-When calling take_screenshot, always supply a short semantic file_name describing
-the captured page or state. If you know your current workspace path, prefer an absolute
-directory inside that workspace so the destination does not depend on the MCP server's
-working directory. Otherwise omit directory to use the configured workspace default.
+One Selenium session has exactly one active tab context. Browser tools use it. Call
+list_tabs then switch_tab(handle) to change context; open_tab activates its new tab and
+close_tab reports the successor. Tab-sensitive calls must be serialized; use separate
+sessions for parallel work. For take_screenshot choose a semantic file_name. Prefer an
+absolute directory inside your current workspace when known; otherwise omit directory.
+""".strip()
+
+COMPACT_MCP_INSTRUCTIONS = """
+One browser session and its active tab are shared mutable state; serialize tab-sensitive
+calls. Recommended workflow: tabs(list) -> navigate -> wait_for -> query_elements ->
+interact_element -> take_screenshot. Element refs are document-scoped; query again after
+navigation. browser_logs owns bounded session-local buffers: peek preserves entries,
+consume removes returned entries, and redaction is on by default. tabs(list) reports
+browser versions, current page state, and the controlled download directory. Downloads
+default under the workspace. Screenshots, uploads, response bodies, raw logs, tabs, and
+localStorage can expose sensitive or cross-origin data; use explicit paths/raw opt-ins
+only when authorized.
 """.strip()
 
 # Initialize FastMCP
 mcp = FastMCP(
     name="mcp-selenium-sync",
     instructions=MCP_INSTRUCTIONS,
+)
+
+compact_mcp = FastMCP(
+    name="mcp-selenium-sync-compact",
+    instructions=COMPACT_MCP_INSTRUCTIONS,
 )
 
 
@@ -88,6 +141,7 @@ def get_driver_factory(driver_type: str = "normal_chromedriver"):
 def initialize_driver_instance(custom_user_data_dir: str = "", custom_debug_port: Optional[int] = None, custom_profile: str = ""):
     """Initialize the global driver instance based on driver type."""
     global driver_instance, user_data_dir, debug_port, driver_type, profile
+    global _configured_download_session
     
     # Use custom values if provided
     data_dir = custom_user_data_dir or user_data_dir
@@ -99,6 +153,7 @@ def initialize_driver_instance(custom_user_data_dir: str = "", custom_debug_port
     
     # Initialize the driver instance
     driver_instance = driver_class(user_data_dir=data_dir, profile=profile_name)
+    _configured_download_session = ""
     
     logger.info(f"Initialized {driver_type} driver instance")
     return driver_instance
@@ -123,7 +178,9 @@ def ensure_driver_initialized():
         driver_instance = initialize_driver_instance()
     
     # Ensure the actual selenium driver is initialized
-    return driver_instance.ensure_driver_initialized()
+    driver = driver_instance.ensure_driver_initialized()
+    configure_download_directory(driver)
+    return driver
 
 
 def recover_from_stale_window() -> None:
@@ -186,8 +243,9 @@ def get_driver():
 
 def quit_driver():
     """Quit the current driver instance."""
-    global driver_instance
+    global driver_instance, _configured_download_session
     
     if driver_instance is not None:
         driver_instance.quit()
         driver_instance = None
+        _configured_download_session = ""

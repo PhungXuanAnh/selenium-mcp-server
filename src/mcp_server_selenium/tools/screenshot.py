@@ -64,7 +64,15 @@ def _next_available_path(directory: Path, file_name: str) -> Path:
     return candidate
 
 
-@mcp.tool()
+def prepare_screenshot_path(file_name: str, directory: str) -> Path:
+    """Validate artifact inputs and reserve the next non-colliding PNG path."""
+    normalized_file_name = _normalize_file_name(file_name)
+    screenshot_directory = _resolve_screenshot_directory(directory)
+    screenshot_directory.mkdir(parents=True, exist_ok=True)
+    return _next_available_path(screenshot_directory, normalized_file_name)
+
+
+@mcp.tool(description="Save the active tab as a uniquely named PNG. Choose a semantic file_name. Prefer an absolute directory inside your current workspace; otherwise omit directory for the configured default.")
 @auto_recover_stale_window
 def take_screenshot(
     file_name: str,
@@ -93,13 +101,7 @@ def take_screenshot(
     except RuntimeError as e:
         raise RuntimeError(str(e))
     
-    normalized_file_name = _normalize_file_name(file_name)
-    screenshot_directory = _resolve_screenshot_directory(directory)
-    screenshot_directory.mkdir(parents=True, exist_ok=True)
-    screenshot_path = _next_available_path(
-        screenshot_directory,
-        normalized_file_name,
-    )
+    screenshot_path = prepare_screenshot_path(file_name, directory)
     driver.save_screenshot(str(screenshot_path))
 
     return f"Screenshot saved to {screenshot_path}"

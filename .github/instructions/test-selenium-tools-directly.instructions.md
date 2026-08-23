@@ -5,6 +5,31 @@ Provide project context and coding guidelines that AI should follow when generat
 
 This document provides examples of how to call selenium MCP server tools directly from Python code without using the MCP protocol. This is useful for testing, debugging, or integrating the tools into other Python applications.
 
+These imports call the legacy implementation functions directly; `--tool-profile` only
+changes the Agent-visible MCP surface. MCP launches use the 10-name `compact` profile by
+default. Pass `--tool-profile legacy` only when an MCP client requires the original 23
+names. The compact surface advertises no legacy aliases and maps calls as follows:
+
+- tab lifecycle → `tabs(action="list|open|switch|close", ...)`
+- console/network/response logs → `browser_logs(action="console|network|response", ...)`
+- five local-storage calls → `local_storage(action="add|read|remove|read_all|remove_all", ...)`
+- exact-one/many/children queries → `query_elements(action="one|many|children", selector={"type": "css|xpath|fields|ref", ...})`
+- query results return document-scoped `element_ref` values used by all interaction, style, and element-screenshot calls
+- interactions → `interact_element(action="click|clear|type|set_value|press_key|select_option|hover|scroll_into_view|upload_file", element_ref=..., ...)`
+- both JavaScript calls → `run_javascript(javascript_code, capture_console=false|true)`
+- `get_style_an_element` → `get_element_style(element_ref=...)`
+- legacy readiness → `wait_for(condition="ready|url|element|text|network_idle", ...)`; navigation and screenshots add explicit wait/capture modes
+
+Recommended compact MCP workflow: `tabs(list) → navigate → wait_for → query_elements →
+interact_element → take_screenshot`. One active tab is shared mutable state, so serialize
+tab-sensitive calls. Compact logs use bounded per-session cursors with `peek`/`consume`
+and redaction on by default. `tabs(list)` reports browser versions and the controlled
+download path. `capture_console=false` never reads logs; `true` returns only new entries
+while preserving older broker entries. Screenshots, uploads, downloads, response bodies,
+raw logs, localStorage, and shared tabs may contain sensitive data.
+The README's **Complete compact action examples** section contains parser-checked JSON
+arguments for every compact action, condition, wait policy, and screenshot mode.
+
 ## Prerequisites
 
 Before running these examples, make sure you have:

@@ -16,7 +16,7 @@ from ..server import mcp, ensure_driver_initialized, auto_recover_stale_window
 logger = logging.getLogger(__name__)
 
 
-@mcp.tool()
+@mcp.tool(description="Return exactly one element matching xpath or the supplied selector fields; error on zero or multiple matches.")
 @auto_recover_stale_window
 def get_an_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', return_html: bool = False, xpath: str = '') -> str:
     """Get an element identified by text content, class name, or ID.
@@ -219,7 +219,7 @@ def get_an_element(text: str = '', class_name: str = '', id: str = '', attribute
         return error_msg
 
 
-@mcp.tool()
+@mcp.tool(description="Return one matched element's paginated direct children. xpath overrides other selector fields.")
 @auto_recover_stale_window
 def get_direct_children(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', return_html: bool = False, xpath: str = '', page: int = 1, page_size: int = 5) -> str:
     """Get all direct child nodes of an element identified by text content, class name, or ID.
@@ -474,7 +474,7 @@ def get_direct_children(text: str = '', class_name: str = '', id: str = '', attr
         })
 
 
-@mcp.tool()
+@mcp.tool(description="Return a page of elements matching xpath or the supplied selector fields.")
 @auto_recover_stale_window
 def get_elements(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', page: int = 1, page_size: int = 3, return_html: bool = False, xpath: str = '') -> str:
     """Get multiple elements identified by text content, class name, or ID with pagination.
@@ -748,7 +748,7 @@ def get_elements(text: str = '', class_name: str = '', id: str = '', attributes:
         })
 
 
-@mcp.tool()
+@mcp.tool(description="Click one matched element, or element_index when multiple matches are expected. xpath overrides other selectors.")
 @auto_recover_stale_window
 def click_to_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', element_index: int = -1, xpath: str = '') -> str:
     """Click on an element identified by text content, class name, or ID.
@@ -937,7 +937,7 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
         return error_msg
 
 
-@mcp.tool()
+@mcp.tool(description="Replace the value of exactly one matched input. xpath overrides other selector fields.")
 @auto_recover_stale_window
 def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', input_value: str = '', in_iframe_id: str = '', in_iframe_name: str = '', xpath: str = '') -> str:
     """Set a value to an input element identified by text content, class name, or ID.
@@ -1012,14 +1012,45 @@ def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '
                 driver.switch_to.default_content()
             return f"Error: Found element with tag '{tag_name}' is not an input-like element that can accept values"
         
-        # Clear existing value
-        element.clear()
-        
-        # Set the new value
-        element.send_keys(input_value)
-        
-        # Verify the value was set (for most input types)
-        current_value = element.get_attribute('value')
+        current_value = None
+        for _ in range(2):
+            element.clear()
+            element.send_keys(input_value)
+            time.sleep(0.05)
+            current_value = element.get_attribute('value')
+            if current_value == input_value:
+                break
+
+        if current_value != input_value:
+            driver.execute_script(
+                """
+                const element = arguments[0];
+                const value = arguments[1];
+                const descriptor = Object.getOwnPropertyDescriptor(
+                    Object.getPrototypeOf(element),
+                    'value'
+                );
+                if (descriptor && descriptor.set) {
+                    descriptor.set.call(element, value);
+                } else {
+                    element.value = value;
+                }
+                element.dispatchEvent(new Event('input', {bubbles: true}));
+                element.dispatchEvent(new Event('change', {bubbles: true}));
+                """,
+                element,
+                input_value,
+            )
+            time.sleep(0.05)
+            current_value = element.get_attribute('value')
+
+        if current_value != input_value:
+            if not original_context:
+                driver.switch_to.default_content()
+            return (
+                f"Error setting value '{input_value}' to {tag_name} element: "
+                f"current value is '{current_value}' after verified retries"
+            )
         
         # Switch back to default content
         if not original_context:

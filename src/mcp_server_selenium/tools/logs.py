@@ -1,29 +1,49 @@
-import os
 import json
 import logging
+import time
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 from ..server import mcp, ensure_driver_initialized, auto_recover_stale_window
 from selenium import webdriver
 
 logger = logging.getLogger(__name__)
+CONSOLE_LOG_DELIVERY_WAIT_SECONDS = 0.25
+
+
+def read_driver_logs(
+    driver: webdriver.Chrome,
+    log_type: str,
+    wait_seconds: float = 0,
+) -> list[dict]:
+    """Read a destructive WebDriver log buffer, briefly polling for delivery."""
+    deadline = time.monotonic() + max(wait_seconds, 0)
+    while True:
+        try:
+            entries = driver.get_log(log_type)
+        except Exception as e:
+            raise RuntimeError(f"Unable to read {log_type} logs: {e}") from e
+
+        if entries or time.monotonic() >= deadline:
+            return entries
+
+        time.sleep(min(0.05, max(deadline - time.monotonic(), 0)))
 
 
 def get_browser_logs(driver: webdriver.Chrome, log_type='browser'):
-    """Get logs from the browser and format them"""
-    logs = []
-    try:
-        browser_logs = driver.get_log(log_type)
-        for entry in browser_logs:
-            logs.append({
-                'type': entry.get('level', 'INFO').lower(),
-                'message': entry.get('message', ''),
-                'timestamp': entry.get('timestamp', 0)
-            })
-    except Exception as e:
-        logger.error(f"Error getting browser logs: {str(e)}")
-    
-    return logs
+    """Get delivered browser logs and format them."""
+    browser_logs = read_driver_logs(
+        driver,
+        log_type,
+        wait_seconds=CONSOLE_LOG_DELIVERY_WAIT_SECONDS,
+    )
+    return [
+        {
+            'type': entry.get('level', 'INFO').lower(),
+            'message': entry.get('message', ''),
+            'timestamp': entry.get('timestamp', 0),
+        }
+        for entry in browser_logs
+    ]
 
 
 def process_performance_log_entry(entry):
@@ -121,33 +141,7 @@ def get_performance_logs(driver: webdriver.Chrome):
     if driver is None:
         return []
     
-    path = "/tmp/performance_logs.json"
-
-    try:
-        # Ensure file exists before opening in r+ mode
-        if not os.path.exists(path):
-            open(path, "w").close()
-
-        with open(path, "r+") as f:
-            try:
-                content = f.read().strip()
-                performance_logs = json.loads(content) if content else []
-            except json.JSONDecodeError:
-                logger.warning("Invalid JSON format in performance_logs.json, resetting file.")
-                performance_logs = []
-
-            performance_logs.extend(driver.get_log("performance"))
-
-            # Rewind + overwrite
-            f.seek(0)
-            f.truncate()
-            json.dump(performance_logs, f, indent=2)
-
-        return performance_logs
-
-    except Exception as e:
-        logger.error(f"Error getting raw performance logs: {str(e)}")
-        return []
+    return read_driver_logs(driver, "performance")
 
 def get_network_logs_from_performance_logs(driver: webdriver.Chrome, filter_url_by_text: str = '', only_errors_log: bool = False) -> List[Dict[str, Any]]:
     """Get network logs using performance logging"""
@@ -167,11 +161,12 @@ def get_network_logs_from_performance_logs(driver: webdriver.Chrome, filter_url_
             if 'Network.' in event.get('method', ''):
                 # Extract the relevant information
                 params = event.get('params', {})
-                request_id = params.get('requestId', '')
                 request = params.get('request', {})
+                response = params.get('response', {})
+                event_url = request.get('url', '') or response.get('url', '')
                 
                 # Filter by URL text
-                if filter_url_by_text and filter_url_by_text.strip() not in request.get('url', ''):
+                if filter_url_by_text and filter_url_by_text.strip() not in event_url:
                     continue
                 
                 if only_errors_log:
@@ -222,11 +217,10 @@ def get_network_logs_from_performance_logs(driver: webdriver.Chrome, filter_url_
         
         return network_events
     except Exception as e:
-        logger.error(f"Error getting network logs from performance logs: {str(e)}")
-        return []
+        raise RuntimeError(f"Error getting network logs from performance logs: {e}") from e
 
 
-@mcp.tool()
+@mcp.tool(description="Read and consume buffered browser console logs, optionally filtering by level.")
 @auto_recover_stale_window
 def get_console_logs(log_level: str = "") -> str:
     """Retrieve console logs from the browser with optional filtering by log level.
@@ -241,6 +235,17 @@ def get_console_logs(log_level: str = "") -> str:
     Returns:
         A JSON string containing console log entries, including their type and message.
     """
+    normalized_log_level = log_level.strip().upper()
+    if normalized_log_level == "ALL":
+        normalized_log_level = ""
+    elif normalized_log_level == "ERROR":
+        normalized_log_level = "SEVERE"
+    elif normalized_log_level not in {"", "DEBUG", "INFO", "WARNING", "SEVERE"}:
+        return (
+            "Error: log_level must be blank/ALL, DEBUG, INFO, WARNING, "
+            "ERROR, or SEVERE"
+        )
+
     try:
         driver = ensure_driver_initialized()
     except RuntimeError as e:
@@ -251,9 +256,12 @@ def get_console_logs(log_level: str = "") -> str:
         logs = get_browser_logs(driver)
         
         # Filter logs by level if specified
-        if log_level:
-            log_level = log_level.lower()
-            logs = [log for log in logs if log['type'].lower() == log_level]
+        if normalized_log_level:
+            logs = [
+                log
+                for log in logs
+                if log['type'].upper() == normalized_log_level
+            ]
         
         return json.dumps(logs, indent=2)
     except Exception as e:
@@ -261,7 +269,7 @@ def get_console_logs(log_level: str = "") -> str:
         return f"Error getting console logs: {str(e)}"
 
 
-@mcp.tool()
+@mcp.tool(description="Read and consume buffered performance events as network logs, optionally filtering by URL text or errors.")
 @auto_recover_stale_window
 def get_network_logs(filter_url_by_text: str = '', only_errors_log: bool = False) -> str:
     """Retrieve network request logs from the browser.
@@ -329,7 +337,7 @@ def get_network_logs(filter_url_by_text: str = '', only_errors_log: bool = False
         return f"Error getting network logs: {str(e)}"
     
 
-@mcp.tool()
+@mcp.tool(description="Fetch a response body by a request ID obtained from get_network_logs.")
 @auto_recover_stale_window
 def get_response(request_id: str) -> str:
     """Retrieve the full response body for a given network request ID.

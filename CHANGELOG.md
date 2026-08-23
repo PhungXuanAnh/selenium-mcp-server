@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+- Add a 10-tool compact surface that maps all existing browser capabilities while retaining the original 23-tool legacy profile as an explicit compatibility fallback
+- Add profile/schema budgets, old-to-new mapping parity tests, and real MCP stdio coverage for both profiles
+- Add compact condition waits, explicit navigation policies, document-scoped element references, nine interaction actions, viewport/full-page/element screenshots, bounded diagnostics cursors, and structured async JavaScript results
+- Add a controlled `--download_dir` with runtime browser/download metadata from `tabs(action="list")`
+- Add compact network event-type filtering and complete parser-checked JSON argument examples for every overloaded compact action
+
+### Changed
+- Make compact the default MCP tool profile; pass `--tool-profile legacy` for the original 23 tool names
+- Shorten legacy tool descriptions and server instructions without changing legacy names or call contracts
+- Document the compact recommended workflow, action-specific JSON contracts, selector/reference lifecycle, timing units, style precedence, event postconditions, runtime discovery, and sensitive-data boundaries
+- Clarify that text equality compares complete body text or newline-joined matched-element text, depending on whether a selector is supplied
+- Expose one concise valid JSON arguments example in each high-friction compact description for `browser_logs`, `wait_for`, and `interact_element`
+- Route compact console/performance reads through bounded session-local cursor buffers with peek/consume semantics and redaction by default; JavaScript console capture remains explicitly opt-in
+
+### Fixed
+- Verify input values after Selenium entry, recover transient no-op writes, and never report set-value success when the DOM value still differs
+- Briefly wait for delayed Chrome console delivery and surface WebDriver log-read failures instead of reporting a misleading empty buffer
+- Normalize console levels so `ALL` disables filtering, `ERROR` matches Chrome `SEVERE`, and invalid values report the accepted set
+- Stop retaining performance logs in a process-global `/tmp` history; compact network reads now use bounded pagination and preserve events drained by network-idle waits
+- Remove Chrome session and stacktrace noise from bounded response-body error envelopes
+
 ## [0.1.8] - 2026-08-22
 
 ### Added

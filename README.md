@@ -90,7 +90,9 @@ PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/ch
 
 # 3. Available Tools
 
-The MCP server provides the following tools:
+The default `compact` profile is documented in [Compact Profile (Default)](#37-compact-profile-default).
+The explicit `--tool-profile legacy` compatibility fallback provides the following 23
+tools with their original names and call contracts.
 
 ## 3.1. Navigation and Page Management
 - `navigate(url, timeout)` - Navigate to a specified URL with Chrome browser
@@ -112,12 +114,13 @@ The MCP server provides the following tools:
 - `get_style_an_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name, return_html, xpath, all_styles, computed_style)` - Get style information for an element
 
 ## 3.4. JavaScript Execution
-- `run_javascript_in_console(javascript_code)` - Execute JavaScript code in the browser console
-- `run_javascript_and_get_console_output(javascript_code)` - Execute JavaScript code and capture both return value and console output
+- `run_javascript_in_console(javascript_code)` - Execute JavaScript without intentionally reading buffered console logs
+- `run_javascript_and_get_console_output(javascript_code)` - Drain old console logs, execute JavaScript, then return its value and newly captured console output
 
 ## 3.5. Browser Logs
-- `get_console_logs(log_level)` - Retrieve console logs from the browser with optional filtering by log level
-- `get_network_logs(filter_url_by_text, only_errors_log)` - Retrieve network request logs from the browser with optional filtering
+- `get_console_logs(log_level)` - Read and consume browser console logs with optional level filtering
+- `get_network_logs(filter_url_by_text, only_errors_log)` - Read and consume performance logs as network events with optional filtering
+- `get_response(request_id)` - Retrieve a response body using a request ID from `get_network_logs`
 
 ## 3.6. Local Storage Management
 - `local_storage_add(key, string_value, object_value, create_empty_string, create_empty_object)` - Add or update a key-value pair in browser's local storage
@@ -125,6 +128,274 @@ The MCP server provides the following tools:
 - `local_storage_read_all()` - Read all key-value pairs from browser's local storage
 - `local_storage_remove(key)` - Remove a key-value pair from browser's local storage
 - `local_storage_remove_all()` - Remove all key-value pairs from browser's local storage
+
+## 3.7. Compact Profile (Default)
+
+The compact profile is the default and exposes the same browser capabilities through 10
+tools and a smaller `tools/list` payload. It remains under evaluation; use
+`--tool-profile legacy` when an existing client still depends on the original 23 names.
+Legacy removal, if ever planned, will be announced as a separate breaking lifecycle
+change. Legacy names are not advertised as compact aliases because aliases would keep
+their schemas in Agent context.
+
+Start it with:
+
+```bash
+python -m mcp_server_selenium
+
+# Explicit compatibility fallback
+python -m mcp_server_selenium --tool-profile legacy
+```
+
+All compact calls share one browser session and global active tab. A reliable default
+workflow is:
+
+```text
+tabs(list) -> navigate -> wait_for -> query_elements -> interact_element -> take_screenshot
+```
+
+Use only fields relevant to an action. The 23 legacy names map to compact as follows:
+
+| Legacy tool | Compact call |
+|---|---|
+| `navigate(url, timeout)` | `navigate(url, wait_until="complete", timeout=timeout)` |
+| `list_tabs()` | `tabs(action="list")` |
+| `open_tab(url)` | `tabs(action="open", url=url)` |
+| `switch_tab(handle)` | `tabs(action="switch", handle=handle)` |
+| `close_tab(handle)` | `tabs(action="close", handle=handle)` |
+| `take_screenshot(file_name, directory)` | `take_screenshot(file_name, directory, mode="viewport")` |
+| `check_page_ready(wait_seconds)` | `wait_for(condition="ready", state="complete")` |
+| `get_console_logs(log_level)` | `browser_logs(action="console", log_level=log_level)` |
+| `get_network_logs(filter_url_by_text, only_errors_log)` | `browser_logs(action="network", filter_url_by_text=..., only_errors_log=...)` |
+| `get_response(request_id)` | `browser_logs(action="response", request_id=request_id)` |
+| `local_storage_add(...)` | `local_storage(action="add", key=..., string_value=... or object_value=...)` |
+| `local_storage_read(key)` | `local_storage(action="read", key=key)` |
+| `local_storage_remove(key)` | `local_storage(action="remove", key=key)` |
+| `local_storage_read_all()` | `local_storage(action="read_all")` |
+| `local_storage_remove_all()` | `local_storage(action="remove_all")` |
+| `get_an_element(...)` | `query_elements(action="one", selector=...)` |
+| `get_elements(...)` | `query_elements(action="many", selector=...)` |
+| `get_direct_children(...)` | `query_elements(action="children", selector=...)` |
+| `click_to_element(...)` | Query, then `interact_element(action="click", element_ref=...)` |
+| `set_value_to_input_element(...)` | Query, then `interact_element(action="set_value", element_ref=..., input_value=...)` |
+| `run_javascript_in_console(javascript_code)` | `run_javascript(javascript_code)` |
+| `run_javascript_and_get_console_output(javascript_code)` | `run_javascript(javascript_code, capture_console=true)` |
+| `get_style_an_element(...)` | Query, then `get_element_style(element_ref=...)` |
+
+### Compact quick example
+
+Each line is one JSON arguments object for the workflow step in the same order:
+
+```jsonl
+{"action":"list"}
+{"url":"https://example.com","wait_until":"network_idle","timeout":30,"quiet_ms":500}
+{"condition":"element","state":"visible","selector":{"type":"css","value":"#login"},"timeout":10}
+{"action":"one","selector":{"type":"css","value":"#login"}}
+{"action":"click","element_ref":"el_VALUE_FROM_QUERY"}
+{"file_name":"login-result","mode":"full_page"}
+```
+
+`tabs(action="list")` also reports the active handle, URL/title/`readyState` of every
+tab, Chrome and ChromeDriver versions, and the absolute download directory. `open`
+activates its new tab; `switch` requires a listed handle; `close` accepts a handle or the
+active tab but never the final tab. Serialize tab-sensitive calls.
+
+### Selectors, waits, and references
+
+`query_elements` and element/text `wait_for` accept one discriminated selector:
+
+```jsonl
+{"type":"xpath","value":"//button[@type='submit']"}
+{"type":"css","value":"form.login button.primary","frame":"payment-frame"}
+{"type":"fields","value":{"element_type":"input","id":"email","attribute:data-test":"login-email"}}
+{"type":"ref","value":"el_VALUE_FROM_QUERY"}
+```
+
+Fields combine with AND. `frame` tries iframe ID, then name. Query pages are 1-based;
+the default sizes are 3 for `many` and 5 for `children`, with a maximum of 50. `one`
+requires exactly one match and `children` exactly one parent. Every result element has an
+opaque `element_ref`; refs re-query the DOM but are bounded and document/tab scoped, so
+query again after full navigation.
+
+`wait_for.condition` supports:
+
+| Condition | Required/action fields |
+|---|---|
+| `ready` | `state="interactive|complete"` |
+| `url` | `value`, optional `match="contains|equals|regex"` |
+| `element` | `selector`, `state="present|visible|enabled|hidden"` |
+| `text` | `value`, optional `selector`, `state="present|absent"` and `match` |
+| `network_idle` | optional `quiet_ms`; long-lived requests are bounded |
+
+For a selector-free text wait, the observed value is the complete
+`document.body.innerText`. With a selector, it is every matched element's `.text` joined
+with newline characters. Therefore `match="equals"` compares that entire exact string,
+including browser-produced whitespace and newlines; use `contains` for a fragment.
+
+`timeout` and `poll_interval` are seconds; `quiet_ms` is milliseconds. Success and
+timeout responses include elapsed time, URL, ready state, and the last observation.
+`navigate.wait_until` accepts `initiated`, `interactive`, `complete`, or `network_idle`;
+completed policies return the final URL after redirects, while `initiated` explicitly
+reports that navigation remains pending.
+
+### Interactions, style, and artifacts
+
+All interaction actions require `element_ref`. Action-specific fields are:
+
+| Action | Additional fields |
+|---|---|
+| `click`, `clear`, `hover`, `scroll_into_view` | none |
+| `type`, `set_value` | `input_value` (`set_value` accepts empty) |
+| `press_key` | `key`, for example `ENTER`, `TAB`, or `ARROW_DOWN` |
+| `select_option` | `option_by="value|text|index"`, `option_value` |
+| `upload_file` | existing absolute or workspace-relative `file_path` |
+
+Stale, intercepted, and temporarily non-interactable operations retry within a bounded
+timeout. Results report attempts, URL before/after, final value/visibility/enabled state,
+and event dispatch. `set_value` verifies its postcondition and explicitly dispatches
+bubbling `input` and `change` events.
+
+`get_element_style(element_ref, ...)` requires one ref. `return_html=true` returns only
+bounded inner/outer HTML and overrides the style flags. Otherwise `all_styles` and
+`computed_style` independently add their bounded sections; both false returns element
+metadata only.
+
+Screenshots use `mode="viewport|full_page|element"`; element mode requires a ref. Names
+are safe PNG basenames and collisions get numeric suffixes. Directories may be absolute
+or workspace-relative without traversal. Chrome downloads default to
+`<workspace>/tmp/selenium-downloads`; configure them with `--download_dir`.
+
+### Logs, JavaScript, storage, and sensitive data
+
+Console/network log calls accept `mode="peek|consume"`, `cursor`, `limit` (1-100), and
+`since_timestamp` (epoch milliseconds). `peek` preserves returned entries; `consume`
+removes them. Continue with `next_cursor`. Buffers and cursors are browser-session local
+and bounded. Console levels are blank/`ALL`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, or
+`SEVERE` (`ERROR` aliases Chrome `SEVERE`). Network filtering uses URL text or error
+status. Redaction is on by default for credentials, sensitive query values, and request
+body/header text; `redact=false` is an explicit sensitive-data opt-in.
+
+```jsonl
+{"action":"console","mode":"peek","cursor":0,"limit":20,"log_level":"ERROR"}
+{"action":"network","mode":"consume","cursor":0,"limit":50,"filter_url_by_text":"/api/","redact":true}
+{"action":"response","request_id":"CDP_REQUEST_ID"}
+```
+
+Response bodies can expire or be evicted from Chrome's CDP buffer; error envelopes give a
+stable reason code and retry hint. Bodies themselves may contain sensitive data.
+
+`run_javascript` awaits Promises and returns bounded typed values for `undefined`, `null`,
+primitives, DOM elements, arrays/objects, circular/max-depth values, and exceptions.
+`capture_console=false` never reads logs. `true` returns only newly generated entries and
+keeps older entries in the broker. Example:
+
+```json
+{"javascript_code":"return await Promise.resolve(document.querySelector('h1'))","capture_console":false,"timeout":30}
+```
+
+Storage `add` requires `key` plus a value or explicit empty-value flag; object mode wins
+over string mode. `read`/`remove` require `key`; `read_all`/`remove_all` need no extra
+field. localStorage is scoped to the active page origin.
+
+Treat screenshots, uploads, downloads, response bodies, raw logs, tabs, and localStorage
+as potentially sensitive. They can contain credentials, PHI, or data from another origin
+in the shared session. Use explicit artifact paths and `redact=false` only when authorized.
+
+### Complete compact action examples
+
+Each line below is one complete JSON arguments object for the named tool. Replace handle,
+reference, request-ID, path, URL, and expected-text placeholders with observed values.
+
+#### `tabs`
+
+```jsonl
+{"action":"list"}
+{"action":"open","url":"https://example.com"}
+{"action":"switch","handle":"TAB_HANDLE_FROM_LIST"}
+{"action":"close","handle":"TAB_HANDLE_FROM_LIST"}
+```
+
+#### `navigate`
+
+```jsonl
+{"url":"https://example.com","wait_until":"initiated","timeout":30}
+{"url":"https://example.com","wait_until":"interactive","timeout":30}
+{"url":"https://example.com","wait_until":"complete","timeout":30}
+{"url":"https://example.com","wait_until":"network_idle","timeout":30,"quiet_ms":500}
+```
+
+#### `wait_for`
+
+```jsonl
+{"condition":"ready","state":"complete","timeout":10}
+{"condition":"url","value":"/dashboard","match":"contains","timeout":10}
+{"condition":"element","state":"visible","selector":{"type":"css","value":"#login"},"timeout":10}
+{"condition":"text","state":"present","value":"Welcome","selector":{"type":"css","value":"main"},"match":"contains","timeout":10}
+{"condition":"network_idle","quiet_ms":500,"timeout":10}
+```
+
+#### `query_elements`
+
+```jsonl
+{"action":"one","selector":{"type":"css","value":"#login"}}
+{"action":"many","selector":{"type":"fields","value":{"element_type":"button"}},"page":1,"page_size":10}
+{"action":"children","selector":{"type":"ref","value":"el_PARENT_FROM_QUERY"},"page":1,"page_size":10}
+```
+
+#### `interact_element`
+
+```jsonl
+{"action":"click","element_ref":"el_FROM_QUERY"}
+{"action":"clear","element_ref":"el_FROM_QUERY"}
+{"action":"type","element_ref":"el_FROM_QUERY","input_value":"hello"}
+{"action":"set_value","element_ref":"el_FROM_QUERY","input_value":"hello"}
+{"action":"press_key","element_ref":"el_FROM_QUERY","key":"ENTER"}
+{"action":"select_option","element_ref":"el_FROM_QUERY","option_by":"value","option_value":"active"}
+{"action":"hover","element_ref":"el_FROM_QUERY"}
+{"action":"scroll_into_view","element_ref":"el_FROM_QUERY"}
+{"action":"upload_file","element_ref":"el_FROM_QUERY","file_path":"/absolute/path/to/file.txt"}
+```
+
+#### `take_screenshot`
+
+```jsonl
+{"file_name":"page","mode":"viewport"}
+{"file_name":"full-page","mode":"full_page"}
+{"file_name":"component","mode":"element","element_ref":"el_FROM_QUERY"}
+```
+
+#### `browser_logs`
+
+```jsonl
+{"action":"console","mode":"peek","cursor":0,"limit":20,"log_level":"ERROR"}
+{"action":"network","mode":"peek","cursor":0,"limit":20,"event_type":"response","filter_url_by_text":"/api/","redact":true}
+{"action":"response","request_id":"CDP_REQUEST_ID"}
+```
+
+#### `local_storage`
+
+```jsonl
+{"action":"add","key":"settings","object_value":{"theme":"dark"}}
+{"action":"read","key":"settings"}
+{"action":"remove","key":"settings"}
+{"action":"read_all"}
+{"action":"remove_all"}
+```
+
+#### `get_element_style`
+
+```jsonl
+{"element_ref":"el_FROM_QUERY","all_styles":false,"computed_style":false}
+{"element_ref":"el_FROM_QUERY","all_styles":true,"computed_style":true}
+{"element_ref":"el_FROM_QUERY","return_html":true}
+```
+
+#### `run_javascript`
+
+```jsonl
+{"javascript_code":"return document.title","capture_console":false,"timeout":30}
+{"javascript_code":"console.warn('probe'); return location.href","capture_console":true,"timeout":30}
+```
 
 # 4. Installation
 
@@ -189,8 +460,11 @@ google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-debug
 After installing via pip/uv, you can run the server directly:
 
 ```bash
-# Basic usage with default settings
+# Basic usage with the default 10-tool compact surface
 python -m mcp_server_selenium
+
+# Use the original 23 tool names for compatibility
+python -m mcp_server_selenium --tool-profile legacy
 
 # With custom Chrome debugging port and user data directory
 python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/chrome-debug
@@ -259,6 +533,8 @@ tailf /tmp/selenium-mcp.log
 - `--port`: Chrome remote debugging port (default: 9222)
 - `--user_data_dir`: Chrome user data directory (default: auto-generated in /tmp)
 - `--workspace_root`: Base directory for relative screenshot directories (default: the server startup directory). It is optional; absolute screenshot directories do not use it.
+- `--tool-profile`: Agent-visible tool surface: `compact` (default) or `legacy` compatibility fallback
+- `--download_dir`: Chrome download directory; defaults to `<workspace_root>/tmp/selenium-downloads`
 - `-v, --verbose`: Increase verbosity (use multiple times for more details)
 
 ## 5.3. Using with MCP Clients
@@ -340,6 +616,9 @@ Alternative source code configuration using full path:
 }
 ```
 
+Omit `--tool-profile` to use the default compact surface. Add `"--tool-profile",
+"legacy"` to a client's server `args` only when it requires the original 23 tool names.
+
 ### 5.3.2. Debug
 
 **VS Code Copilot MCP Status:**
@@ -366,13 +645,12 @@ If you open the `.vscode/mcp.json` file, you can see the MCP server status at th
    - Result: Screenshot saved to `<absolute-workspace-path>/tmp/selenium-screenshot/example-home.png`
 
 3. **Fill a form**:
-   - Tool: `fill_input`
-   - Selector: `#email`
-   - Text: `user@example.com`
+   - Legacy tool: `set_value_to_input_element`
+   - Arguments: `xpath="//*[@id='email']"`, `input_value="user@example.com"`
 
 4. **Click a button**:
-   - Tool: `click_element`
-   - Selector: `button[type="submit"]`
+   - Legacy tool: `click_to_element`
+   - Arguments: `xpath="//button[@type='submit']"`
 
 5. **Execute JavaScript**:
    - Tool: `run_javascript_in_console`
@@ -386,9 +664,9 @@ If you open the `.vscode/mcp.json` file, you can see the MCP server status at th
 
 ## 6.2. Advanced Usage
 
-- **Wait for dynamic content**: Use `wait_for_element` to wait for elements to load
-- **Get page information**: Use `get_page_title`, `get_current_url`, `get_page_content`
-- **Element inspection**: Use `get_element_text`, `get_element_attribute`, `check_element_exists`
+- **Check page loading**: Use `check_page_ready`; query the target again when dynamic content is expected
+- **Get page information**: Use `run_javascript_in_console` with explicit return expressions
+- **Element inspection**: Use `get_an_element`, `get_elements`, or `get_style_an_element`
 - **JavaScript automation**: Use `run_javascript_in_console` for complex DOM manipulation and data extraction
 - **JavaScript debugging**: Use `run_javascript_and_get_console_output` to capture console logs for debugging
 
@@ -512,9 +790,8 @@ For issues and questions:
 
 # 12. Documentation
 
-For detailed documentation on specific features:
-- [JavaScript Console Tools](docs/javascript_console_tools.md) - Comprehensive guide for JavaScript execution tools
-- [Examples](examples/javascript_console_examples.py) - JavaScript execution examples and use cases
+See [Available Tools](#3-available-tools), including the complete compact migration
+table, and [Examples](#6-examples).
 
 # 13. Reference
 
