@@ -43,7 +43,7 @@ def tabs(
     return close_tab(handle)
 
 
-@compact_mcp.tool(description='console/network support peek or consume, cursor pagination, limit 1-100, since_timestamp (epoch ms), and redact=true. network event_type: all/request/response/finished/failed. console levels: ALL/DEBUG/INFO/WARNING/ERROR/SEVERE. response requires request_id. Reuse next_cursor; peek keeps entries, consume removes returned entries. Example JSON: {"action":"network","event_type":"response"}')
+@compact_mcp.tool(description='Read console/network/response evidence. peek preserves; consume removes. Network supports event/cursor/time, URL/error fields, filters for regex/method/type/request/status, and default redaction. response requires request_id. Example JSON: {"action":"network","event_type":"response"}')
 def browser_logs(
     action: Literal["console", "network", "response"],
     mode: Literal["consume", "peek"] = "consume",
@@ -56,6 +56,7 @@ def browser_logs(
     event_type: Literal["all", "request", "response", "finished", "failed"] = "all",
     redact: bool = True,
     request_id: str = "",
+    filters: dict = {},
 ) -> str:
     """Read diagnostics through the bounded compact-session broker."""
     import json
@@ -63,6 +64,8 @@ def browser_logs(
     driver = ensure_driver_initialized()
     try:
         if action == "console":
+            if filters:
+                raise ValueError("filters are supported only for network logs")
             diagnostics_broker.drain_console(driver)
             result = diagnostics_broker.read(
                 "console",
@@ -86,6 +89,7 @@ def browser_logs(
                 filter_url_by_text=filter_url_by_text,
                 only_errors=only_errors_log,
                 event_type=event_type,
+                filters=filters,
             )
             return json.dumps(result, ensure_ascii=False)
     except (RuntimeError, ValueError) as exc:
@@ -140,22 +144,25 @@ def local_storage(
     return local_storage_remove_all()
 
 
-@compact_mcp.tool(description="Use selector {type: xpath|css|fields|ref, value, frame?}. fields.value keys are text, class_name, id, element_type, or attribute:<name> and combine with AND. Results include stable element_ref values. one requires exactly one match; many/children use 1-based pages, default sizes 3/5, maximum 50.")
+@compact_mcp.tool(description="Query one/many/children, including hidden matches. xpath/css/fields/ref; fields support role/name. options.scope traverses bounded frames/open shadows. Results explain 1800s ref/rerender/navigation policy.")
 def query_elements(
     action: Literal["one", "many", "children"],
     selector: Selector,
     page: int = 1,
     page_size: Optional[int] = None,
     return_html: bool = False,
+    options: dict = {},
 ) -> str:
     """Query elements through document-scoped locator specifications."""
     driver = ensure_driver_initialized()
-    return query_json(driver, action, selector, page, page_size, return_html)
+    return query_json(driver, action, selector, page, page_size, return_html, options)
 
 
-@compact_mcp.tool(description='Requires element_ref from query_elements. Actions: click, clear, type(input_value), set_value(input_value, including empty), press_key(key such as ENTER), select_option(option_by=value|text|index plus option_value), hover, scroll_into_view, upload_file(file_path). Retries stale/intercepted/not-visible failures and returns URL, final element state, event dispatch, and attempts. Example JSON: {"action":"type","element_ref":"el_REF","input_value":"x"}')
+@compact_mcp.tool(description='inspect diagnoses hit-test/blockers. Native click auto-scrolls/waits/retries; actions/offset/JavaScript are explicit. Input supports verified contenteditable. scroll is bounded. timeout covers the call. execution and observed never assert app intent. Example JSON: {"action":"inspect","element_ref":"el_REF"}')
 def interact_element(
     action: Literal[
+        "inspect",
+        "scroll",
         "click",
         "clear",
         "type",
@@ -166,13 +173,14 @@ def interact_element(
         "scroll_into_view",
         "upload_file",
     ],
-    element_ref: str,
+    element_ref: str = "",
     input_value: str = "",
     key: str = "",
     option_by: Literal["value", "text", "index"] = "value",
     option_value: str = "",
     file_path: str = "",
     timeout: float = 10,
+    options: dict = {},
 ) -> str:
     """Run a bounded, re-resolving interaction."""
     return interact_json(
@@ -185,6 +193,7 @@ def interact_element(
         option_value,
         file_path,
         timeout,
+        options,
     )
 
 
@@ -213,9 +222,11 @@ def take_screenshot(
     )
 
 
-@compact_mcp.tool(description='Wait for ready, url, element, text, or network_idle. state: ready=interactive|complete, element=present|visible|enabled|hidden, text=present|absent. url/text use value and match=contains|equals|regex; element requires selector. Text without selector observes body.innerText; with selector it joins matched .text using newlines, so equals compares that entire exact string. Times are seconds except quiet_ms. Returns timeout diagnostics; network events remain readable in browser_logs. Example JSON: {"condition":"element","state":"visible","selector":{"type":"css","value":"#x"}}')
+@compact_mcp.tool(description='One-deadline waits: ready/url/element/text/network_idle/network_response/all/any. options adds polling ignores or cursor/route/JSON predicates; network evidence is peeked, not consumed. Example JSON: {"condition":"element","state":"visible","selector":{"type":"css","value":"#x"}}')
 def wait_for(
-    condition: Literal["ready", "url", "element", "text", "network_idle"],
+    condition: Literal[
+        "ready", "url", "element", "text", "network_idle", "network_response", "all", "any"
+    ],
     state: str = "",
     value: str = "",
     selector: Optional[Selector] = None,
@@ -223,6 +234,7 @@ def wait_for(
     timeout: float = 30,
     poll_interval: float = 0.1,
     quiet_ms: int = 500,
+    options: dict = {},
 ) -> str:
     """Wait for a concrete browser condition with a bounded deadline."""
     driver = ensure_driver_initialized()
@@ -236,6 +248,7 @@ def wait_for(
         timeout,
         poll_interval,
         quiet_ms,
+        options,
     )
 
 

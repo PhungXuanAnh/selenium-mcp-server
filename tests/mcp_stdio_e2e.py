@@ -33,7 +33,18 @@ COMPACT_TOOLS = {
 }
 FIXTURE_HTML = """<!doctype html>
 <title>Selenium compact E2E</title>
-<style>body{min-height:2600px} #hidden-target{display:none} #scroll-target{margin-top:1800px}</style>
+<style>
+body{min-height:2600px}
+#hidden-target{display:none}
+#scroll-target{margin-top:1800px}
+#covered-wrap{position:relative;width:220px;height:48px}
+#covered-target,#covering-overlay{position:absolute;inset:0}
+#covering-overlay{z-index:2;background:rgba(255,0,0,.15)}
+#animated-target{animation:e2e-pulse 30s linear infinite}
+@keyframes e2e-pulse{from{transform:translateX(0)}to{transform:translateX(20px)}}
+#nested-scroll{height:120px;width:260px;overflow:auto;border:1px solid #999}
+#nested-scroll-spacer{height:700px;padding-top:640px}
+</style>
 <h1 id="title">Compact fixture</h1>
 <input id="name" value="initial">
 <button id="replaceable" onclick="document.getElementById('status').textContent='clicked'">Click</button>
@@ -45,6 +56,20 @@ FIXTURE_HTML = """<!doctype html>
 <a id="download-link" href="/download" download="e2e-download.txt">Download</a>
 <div id="status">idle</div>
 <div id="hidden-target">hidden</div>
+<div id="covered-wrap">
+  <button id="covered-target" onclick="document.getElementById('status').textContent='covered-clicked'">Covered</button>
+  <div id="covering-overlay" aria-label="Blocking overlay"></div>
+</div>
+<button id="animated-target">Animated</button>
+<div id="rich-editor" role="textbox" aria-label="Prompt editor" contenteditable="true" data-placeholder="Ask anything"></div>
+<section aria-label="Conversation">
+  <article role="article" aria-label="User message">user fixture message</article>
+  <article role="article" aria-label="Assistant message">assistant fixture message</article>
+</section>
+<div id="nested-scroll">
+  <div id="nested-scroll-spacer"><button id="nested-scroll-target">Allow once</button></div>
+</div>
+<div id="shadow-host"></div>
 <div id="parent"><span class="child">one</span><span class="child">two</span></div>
 <iframe id="fixture-frame" src="/frame.html"></iframe>
 <div id="scroll-target">bottom target</div>
@@ -55,6 +80,21 @@ nameInput.dataset.changeEvents = '0';
 nameInput.addEventListener('input', () => nameInput.dataset.inputEvents = String(Number(nameInput.dataset.inputEvents) + 1));
 nameInput.addEventListener('change', () => nameInput.dataset.changeEvents = String(Number(nameInput.dataset.changeEvents) + 1));
 nameInput.addEventListener('keydown', event => { if (event.key === 'Enter') document.getElementById('status').textContent = 'enter'; });
+const richEditor = document.getElementById('rich-editor');
+richEditor.dataset.beforeinputEvents = '0';
+richEditor.dataset.inputEvents = '0';
+richEditor.addEventListener('beforeinput', () => richEditor.dataset.beforeinputEvents = String(Number(richEditor.dataset.beforeinputEvents) + 1));
+richEditor.addEventListener('input', () => richEditor.dataset.inputEvents = String(Number(richEditor.dataset.inputEvents) + 1));
+const shadowRoot = document.getElementById('shadow-host').attachShadow({mode:'open'});
+shadowRoot.innerHTML = '<button id="shadow-action" role="button" aria-label="Shadow allow">Shadow allow</button>';
+window.startPollingFixture = () => {
+  window.stopPollingFixture();
+  window.pollingTimer = setInterval(() => fetch('/api/poll?token=secret'), 40);
+};
+window.stopPollingFixture = () => {
+  if (window.pollingTimer) clearInterval(window.pollingTimer);
+  window.pollingTimer = null;
+};
 </script>
 """
 FRAME_HTML = """<!doctype html><title>Frame</title><button id="frame-button" onclick="this.textContent='frame-clicked'">Frame button</button>"""
@@ -73,6 +113,22 @@ class QuietHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/data":
             body = json.dumps({"ok": True, "source": "e2e-api"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path == "/api/poll":
+            body = json.dumps({"ok": True, "partial": True, "source": "poll"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path == "/api/build":
+            body = json.dumps({"ok": True, "partial": False, "source": "build"}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -379,9 +435,8 @@ class McpStdioE2ETest(unittest.TestCase):
                                 "selector": {"type": "css", "value": "#x"},
                             },
                             "interact_element": {
-                                "action": "type",
+                                "action": "inspect",
                                 "element_ref": "el_REF",
-                                "input_value": "x",
                             },
                         }
                         for tool_name, expected in expected_live_examples.items():
@@ -598,11 +653,93 @@ class McpStdioE2ETest(unittest.TestCase):
                                 "frame": "fixture-frame",
                             }
                         )
+                        scoped_frame = await call_json(
+                            "query_elements",
+                            {
+                                "action": "one",
+                                "selector": {"type": "css", "value": "#frame-button"},
+                                "options": {
+                                    "scope": [
+                                        {
+                                            "type": "frame",
+                                            "value": "fixture-frame",
+                                            "by": "id",
+                                        }
+                                    ]
+                                },
+                            },
+                        )
+                        self.assertTrue(scoped_frame["ok"], scoped_frame)
+                        self.assertEqual(
+                            "frame", scoped_frame["elements"][0]["scope"][0]["type"]
+                        )
+                        shadow_query = await call_json(
+                            "query_elements",
+                            {
+                                "action": "one",
+                                "selector": {"type": "css", "value": "#shadow-action"},
+                                "options": {
+                                    "scope": [
+                                        {
+                                            "type": "shadow",
+                                            "value": "#shadow-host",
+                                        }
+                                    ]
+                                },
+                            },
+                        )
+                        self.assertTrue(shadow_query["ok"], shadow_query)
+                        self.assertEqual("button", shadow_query["elements"][0]["role"])
+                        self.assertEqual(
+                            "Shadow allow",
+                            shadow_query["elements"][0]["accessible_name"],
+                        )
                         self.assertEqual(2, many["matched"])
                         self.assertEqual(1, many["returned"])
                         self.assertTrue(many["has_more"])
                         self.assertEqual(2, children["matched"])
                         self.assertTrue(ref_query["ok"])
+                        assistant_message = await call_json(
+                            "query_elements",
+                            {
+                                "action": "one",
+                                "selector": {
+                                    "type": "fields",
+                                    "value": {
+                                        "element_type": "article",
+                                        "role": "article",
+                                        "accessible_name": "Assistant message",
+                                    },
+                                },
+                            },
+                        )
+                        self.assertTrue(assistant_message["ok"], assistant_message)
+                        self.assertEqual(
+                            "assistant fixture message",
+                            assistant_message["elements"][0]["text"],
+                        )
+                        self.assertEqual(
+                            "Assistant message",
+                            assistant_message["elements"][0]["accessible_name"],
+                        )
+                        hidden_query = await call_json(
+                            "query_elements",
+                            {
+                                "action": "one",
+                                "selector": {"type": "css", "value": "#hidden-target"},
+                            },
+                        )
+                        self.assertTrue(
+                            hidden_query["query_semantics"]["includes_hidden_matches"]
+                        )
+                        self.assertFalse(hidden_query["elements"][0]["visible"])
+                        self.assertEqual(
+                            1800, hidden_query["reference_policy"]["ttl_seconds"]
+                        )
+                        self.assertIn(
+                            "full_document_navigation",
+                            hidden_query["reference_policy"]["invalidated_by"],
+                        )
 
                         input_ref = await query_ref({"type": "css", "value": "#name"})
                         button_ref = await query_ref(
@@ -619,6 +756,167 @@ class McpStdioE2ETest(unittest.TestCase):
                         )
                         upload_ref = await query_ref(
                             {"type": "css", "value": "#upload"}
+                        )
+                        rich_editor_ref = await query_ref(
+                            {"type": "css", "value": "#rich-editor"}
+                        )
+                        rich_input = await call_json(
+                            "interact_element",
+                            {
+                                "action": "set_value",
+                                "element_ref": rich_editor_ref,
+                                "input_value": "rich prompt",
+                                "options": {
+                                    "target_kind": "contenteditable",
+                                    "input_mode": "auto",
+                                    "clear_existing": True,
+                                    "verify_after_input": True,
+                                },
+                            },
+                        )
+                        self.assertTrue(rich_input["ok"], rich_input)
+                        self.assertEqual(
+                            "contenteditable",
+                            rich_input["event_dispatch"]["target_kind"],
+                        )
+                        self.assertTrue(
+                            rich_input["event_dispatch"]["verification"]["passed"]
+                        )
+                        nested_container_ref = await query_ref(
+                            {"type": "css", "value": "#nested-scroll"}
+                        )
+                        nested_target_ref = await query_ref(
+                            {"type": "css", "value": "#nested-scroll-target"}
+                        )
+                        nested_scroll = await call_json(
+                            "interact_element",
+                            {
+                                "action": "scroll",
+                                "element_ref": nested_container_ref,
+                                "timeout": 2,
+                                "options": {
+                                    "direction": "down",
+                                    "amount": 200,
+                                    "until_visible": {
+                                        "type": "ref",
+                                        "value": nested_target_ref,
+                                    },
+                                    "max_steps": 5,
+                                },
+                            },
+                        )
+                        self.assertTrue(nested_scroll["ok"], nested_scroll)
+                        self.assertGreaterEqual(nested_scroll["attempts"], 1)
+                        self.assertGreaterEqual(
+                            nested_scroll["scroll"]["steps"][-1]["changed"], 1
+                        )
+                        hidden_ref = await query_ref(
+                            {"type": "css", "value": "#hidden-target"}
+                        )
+                        exhausted_scroll = await call_json(
+                            "interact_element",
+                            {
+                                "action": "scroll",
+                                "timeout": 1,
+                                "options": {
+                                    "direction": "both",
+                                    "amount": 500,
+                                    "until_visible": {
+                                        "type": "ref",
+                                        "value": hidden_ref,
+                                    },
+                                    "max_steps": 4,
+                                    "include_nested_scroll_containers": True,
+                                },
+                            },
+                        )
+                        self.assertFalse(exhausted_scroll["ok"])
+                        self.assertEqual(
+                            "scroll_target_not_visible",
+                            exhausted_scroll["error"]["code"],
+                        )
+                        covered_ref = await query_ref(
+                            {"type": "css", "value": "#covered-target"}
+                        )
+                        animated_ref = await query_ref(
+                            {"type": "css", "value": "#animated-target"}
+                        )
+                        self.assertTrue(
+                            (
+                                await call_json(
+                                    "interact_element",
+                                    {
+                                        "action": "scroll_into_view",
+                                        "element_ref": covered_ref,
+                                    },
+                                )
+                            )["ok"]
+                        )
+                        covered_inspection = await call_json(
+                            "interact_element",
+                            {"action": "inspect", "element_ref": covered_ref},
+                        )
+                        self.assertIn(
+                            "covered", covered_inspection["actionability"]["reasons"]
+                        )
+                        self.assertEqual(
+                            "covering-overlay",
+                            covered_inspection["actionability"]["hit_test"][
+                                "covered_by"
+                            ]["id"],
+                        )
+                        covered_native = await call_json(
+                            "interact_element",
+                            {
+                                "action": "click",
+                                "element_ref": covered_ref,
+                                "timeout": 0.2,
+                                "options": {"stability_ms": 0},
+                            },
+                        )
+                        self.assertFalse(covered_native["ok"])
+                        self.assertEqual("native", covered_native["execution"]["strategy"])
+                        self.assertFalse(covered_native["execution"]["attempted"])
+                        self.assertIn(
+                            "covered", covered_native["actionability"]["reasons"]
+                        )
+                        animated_native = await call_json(
+                            "interact_element",
+                            {
+                                "action": "click",
+                                "element_ref": animated_ref,
+                                "timeout": 0.2,
+                                "options": {"stability_ms": 0},
+                            },
+                        )
+                        self.assertFalse(animated_native["ok"])
+                        self.assertIn(
+                            "animating", animated_native["actionability"]["reasons"]
+                        )
+                        covered_javascript = await call_json(
+                            "interact_element",
+                            {
+                                "action": "click",
+                                "element_ref": covered_ref,
+                                "options": {"click_mode": "javascript"},
+                            },
+                        )
+                        self.assertTrue(covered_javascript["ok"])
+                        self.assertEqual(
+                            "javascript", covered_javascript["execution"]["strategy"]
+                        )
+                        self.assertTrue(
+                            (
+                                await call_json(
+                                    "wait_for",
+                                    {
+                                        "condition": "text",
+                                        "selector": {"type": "css", "value": "#status"},
+                                        "value": "covered-clicked",
+                                        "timeout": 1,
+                                    },
+                                )
+                            )["ok"]
                         )
                         await call_json(
                             "run_javascript",
@@ -640,7 +938,18 @@ class McpStdioE2ETest(unittest.TestCase):
                                 "interact_element",
                                 {"action": "set_value", "element_ref": input_ref, "input_value": "updated"},
                             ),
-                            await call_json("interact_element", {"action": "click", "element_ref": button_ref}),
+                            await call_json(
+                                "interact_element",
+                                {
+                                    "action": "click",
+                                    "element_ref": button_ref,
+                                    "options": {
+                                        "click_mode": "actions",
+                                        "offset": {"x": 0, "y": 0},
+                                        "stability_ms": 0,
+                                    },
+                                },
+                            ),
                             await call_json(
                                 "interact_element",
                                 {
@@ -667,14 +976,24 @@ class McpStdioE2ETest(unittest.TestCase):
                         ]
                         self.assertTrue(all(result["ok"] for result in interactions))
                         self.assertEqual(
-                            ["input", "change"],
+                            ["keyboard", "input", "change"],
                             interactions[3]["event_dispatch"]["events"],
+                        )
+                        self.assertTrue(interactions[4]["execution"]["completed"])
+                        self.assertTrue(interactions[4]["observed"]["effect_observed"])
+                        self.assertEqual(
+                            "not_asserted",
+                            interactions[4]["observed"]["application_outcome"],
+                        )
+                        self.assertEqual(
+                            "not_asserted",
+                            interactions[7]["observed"]["application_outcome"],
                         )
 
                         page_state_result = await call_json(
                             "run_javascript",
                             {
-                                "javascript_code": "return {value:document.getElementById('name').value, status:document.getElementById('status').textContent, choice:document.getElementById('choice').value, upload:document.getElementById('upload').value, inputEvents:document.getElementById('name').dataset.inputEvents, changeEvents:document.getElementById('name').dataset.changeEvents}"
+                                "javascript_code": "return {value:document.getElementById('name').value, status:document.getElementById('status').textContent, choice:document.getElementById('choice').value, upload:document.getElementById('upload').value, inputEvents:document.getElementById('name').dataset.inputEvents, changeEvents:document.getElementById('name').dataset.changeEvents, richText:document.getElementById('rich-editor').innerText, richBeforeInputEvents:document.getElementById('rich-editor').dataset.beforeinputEvents, richInputEvents:document.getElementById('rich-editor').dataset.inputEvents}"
                             },
                         )
                         page_state = self._typed_value(page_state_result["result"])
@@ -683,6 +1002,9 @@ class McpStdioE2ETest(unittest.TestCase):
                         self.assertIn("upload-evidence.txt", page_state["upload"])
                         self.assertGreaterEqual(int(page_state["inputEvents"]), 1)
                         self.assertGreaterEqual(int(page_state["changeEvents"]), 1)
+                        self.assertEqual("rich prompt", page_state["richText"])
+                        self.assertGreaterEqual(int(page_state["richBeforeInputEvents"]), 1)
+                        self.assertGreaterEqual(int(page_state["richInputEvents"]), 1)
 
                         style = await call_json(
                             "get_element_style",
@@ -906,6 +1228,114 @@ class McpStdioE2ETest(unittest.TestCase):
                         )
                         self.assertTrue(response["ok"])
                         self.assertIn("e2e-api", response["body"])
+                        baseline = await call_json(
+                            "browser_logs",
+                            {"action": "network", "mode": "peek", "limit": 1},
+                        )
+                        await call_json(
+                            "run_javascript",
+                            {
+                                "javascript_code": "window.startPollingFixture(); setTimeout(() => fetch('/api/build?token=secret'), 150); return true"
+                            },
+                        )
+                        response_options = {
+                            "cursor": baseline["latest_cursor"],
+                            "filters": {
+                                "url_regex": "/api/build(?:\\?|$)",
+                                "method": "GET",
+                                "resource_type": "Fetch",
+                                "status": 200,
+                            },
+                            "json_predicate": {"partial": False},
+                        }
+                        build_wait = await call_json(
+                            "wait_for",
+                            {
+                                "condition": "network_response",
+                                "timeout": 3,
+                                "options": response_options,
+                            },
+                        )
+                        self.assertTrue(build_wait["ok"], build_wait)
+                        self.assertTrue(
+                            build_wait["observation"]["json_predicate"]["partial"][
+                                "matched"
+                            ]
+                        )
+                        self.assertNotIn("token=secret", json.dumps(build_wait))
+                        composed = await call_json(
+                            "wait_for",
+                            {
+                                "condition": "all",
+                                "timeout": 2,
+                                "options": {
+                                    "conditions": [
+                                        {
+                                            "condition": "element",
+                                            "state": "visible",
+                                            "selector": {
+                                                "type": "css",
+                                                "value": "#title",
+                                            },
+                                        },
+                                        {
+                                            "condition": "network_response",
+                                            "options": response_options,
+                                        },
+                                    ]
+                                },
+                            },
+                        )
+                        self.assertTrue(composed["ok"], composed)
+                        ignored_polling = await call_json(
+                            "wait_for",
+                            {
+                                "condition": "network_idle",
+                                "quiet_ms": 100,
+                                "timeout": 2,
+                                "options": {
+                                    "ignore_url_regexes": ["/api/poll(?:\\?|$)"]
+                                },
+                            },
+                        )
+                        self.assertTrue(ignored_polling["ok"], ignored_polling)
+                        self.assertEqual(
+                            1, ignored_polling["observation"]["ignored_url_patterns"]
+                        )
+                        build_logs = await call_json(
+                            "browser_logs",
+                            {
+                                "action": "network",
+                                "mode": "peek",
+                                "event_type": "response",
+                                "limit": 100,
+                                "filters": {
+                                    "url_regex": "/api/build(?:\\?|$)",
+                                    "method": "GET",
+                                    "resource_type": "Fetch",
+                                    "status": 200,
+                                },
+                            },
+                        )
+                        self.assertTrue(build_logs["events"])
+                        self.assertNotIn("token=secret", json.dumps(build_logs))
+                        build_request_id = build_logs["events"][0]["correlation"][
+                            "request_id"
+                        ]
+                        by_request_id = await call_json(
+                            "browser_logs",
+                            {
+                                "action": "network",
+                                "mode": "peek",
+                                "event_type": "response",
+                                "filters": {"request_id": build_request_id},
+                            },
+                        )
+                        self.assertTrue(by_request_id["events"])
+                        await call_json(
+                            "run_javascript",
+                            {"javascript_code": "window.stopPollingFixture(); return true"},
+                        )
                         unavailable = await call_json(
                             "browser_logs",
                             {"action": "response", "request_id": "missing-e2e-id"},

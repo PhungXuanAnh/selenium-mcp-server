@@ -52,6 +52,7 @@ _NETWORK_EVENT_PREFIXES = {
     "failed": "Network.loadingFailed",
 }
 _MAX_RESPONSE_ERROR_CHARS = 500
+_NETWORK_FILTER_KEYS = {"url_regex", "method", "resource_type", "request_id", "status"}
 
 
 @dataclass(frozen=True)
@@ -152,6 +153,9 @@ class DiagnosticsBroker:
         self._console = _EventBuffer(console_limit)
         self._network = _EventBuffer(network_limit)
         self._inflight: dict[str, tuple[float, str]] = {}
+        self._request_metadata: dict[str, dict[str, Any]] = {}
+        self._network_activity = deque(maxlen=network_limit * 2)
+        self._network_epoch = time.monotonic()
         self._last_network_activity = time.monotonic()
         self._ignored_long_running = 0
 
@@ -164,6 +168,9 @@ class DiagnosticsBroker:
         self._console = _EventBuffer(self.console_limit)
         self._network = _EventBuffer(self.network_limit)
         self._inflight = {}
+        self._request_metadata = {}
+        self._network_activity = deque(maxlen=self.network_limit * 2)
+        self._network_epoch = time.monotonic()
         self._last_network_activity = time.monotonic()
         self._ignored_long_running = 0
 
@@ -226,17 +233,55 @@ class DiagnosticsBroker:
             request = params.get("request", {})
             url = str(request.get("url", ""))
             resource_type = str(params.get("type", ""))
+            self._request_metadata[request_id] = {
+                "request_id": request_id,
+                "url": url,
+                "method": str(request.get("method", "")).upper(),
+                "resource_type": resource_type,
+                "status": 0,
+            }
+            while len(self._request_metadata) > self.network_limit * 2:
+                self._request_metadata.pop(next(iter(self._request_metadata)))
             if url.startswith(("http://", "https://")) and resource_type not in {
                 "EventSource",
                 "WebSocket",
             }:
                 self._inflight[request_id] = (now, url)
+        elif method == "Network.responseReceived" and request_id:
+            response = params.get("response", {})
+            metadata = self._request_metadata.setdefault(
+                request_id,
+                {"request_id": request_id, "method": "", "status": 0},
+            )
+            metadata.update(
+                {
+                    "url": str(response.get("url", metadata.get("url", ""))),
+                    "resource_type": str(
+                        params.get("type", metadata.get("resource_type", ""))
+                    ),
+                    "status": int(response.get("status", 0) or 0),
+                }
+            )
         elif method in {"Network.loadingFinished", "Network.loadingFailed"}:
             self._inflight.pop(request_id, None)
+        metadata = self.event_metadata(event)
+        self._network_activity.append((now, metadata.get("url", "")))
         self._last_network_activity = now
 
-    def network_state(self, driver) -> dict:
+    def network_state(self, driver, ignore_url_regexes=None) -> dict:
         """Drain through the broker and report finite requests for network-idle waits."""
+        patterns = ignore_url_regexes or []
+        if not isinstance(patterns, list) or len(patterns) > 20:
+            raise ValueError("ignore_url_regexes must be a list with at most 20 entries")
+        compiled = []
+        for pattern in patterns:
+            if not isinstance(pattern, str) or len(pattern) > 500:
+                raise ValueError("ignore_url_regexes entries must be strings up to 500 characters")
+            compiled.append(re.compile(pattern))
+
+        def ignored(url):
+            return any(pattern.search(url) for pattern in compiled)
+
         self.drain_network(driver)
         now = time.monotonic()
         expired = [
@@ -247,12 +292,29 @@ class DiagnosticsBroker:
         for request_id in expired:
             self._inflight.pop(request_id, None)
             self._ignored_long_running += 1
+        inflight = [
+            (request_id, url)
+            for request_id, (_, url) in self._inflight.items()
+            if not ignored(url)
+        ]
+        ignored_inflight = len(self._inflight) - len(inflight)
+        if compiled:
+            relevant_activity = [
+                activity
+                for activity, url in self._network_activity
+                if not ignored(url)
+            ]
+            last_activity = max(relevant_activity, default=self._network_epoch)
+        else:
+            last_activity = self._last_network_activity
         return {
             "inflight": [
                 {"request_id": request_id, "url": _redact_url(url)}
-                for request_id, (_, url) in self._inflight.items()
+                for request_id, url in inflight
             ],
-            "quiet_ms": int((now - self._last_network_activity) * 1000),
+            "quiet_ms": int((now - last_activity) * 1000),
+            "ignored_inflight": ignored_inflight,
+            "ignored_url_patterns": len(compiled),
             "ignored_long_running": self._ignored_long_running,
         }
 
@@ -268,6 +330,7 @@ class DiagnosticsBroker:
         filter_url_by_text: str = "",
         only_errors: bool = False,
         event_type: str = "all",
+        filters: dict | None = None,
     ) -> dict:
         if mode not in {"peek", "consume"}:
             raise ValueError("mode must be 'peek' or 'consume'")
@@ -290,6 +353,7 @@ class DiagnosticsBroker:
             raise ValueError(
                 "event_type must be all, request, response, finished, or failed"
             )
+        normalized_filters = normalize_network_filters(filters or {})
 
         matching = []
         for event in buffer.events:
@@ -299,16 +363,19 @@ class DiagnosticsBroker:
                 if event.payload.get("level") != normalized_level:
                     continue
             if kind == "network":
+                metadata = self.event_metadata(event.payload)
                 event_prefix = _NETWORK_EVENT_PREFIXES[normalized_event_type]
                 if event_prefix and not str(event.payload.get("method", "")).startswith(
                     event_prefix
                 ):
                     continue
                 if filter_url_by_text and filter_url_by_text not in _event_url(
-                    event.payload
+                    event.payload, metadata
                 ):
                     continue
-                if only_errors and not _is_network_error(event.payload):
+                if not _matches_network_filters(metadata, normalized_filters):
+                    continue
+                if only_errors and not _is_network_error(event.payload, metadata):
                     continue
             matching.append(event)
 
@@ -318,9 +385,13 @@ class DiagnosticsBroker:
         events = []
         for event in selected:
             payload = redact_diagnostic(event.payload) if redact else event.payload
-            events.append(
-                {"cursor": event.cursor, "timestamp": event.timestamp, **payload}
-            )
+            item = {"cursor": event.cursor, "timestamp": event.timestamp, **payload}
+            if kind == "network":
+                correlation = self.event_metadata(event.payload)
+                item["correlation"] = (
+                    redact_diagnostic(correlation) if redact else correlation
+                )
+            events.append(item)
         return {
             "ok": True,
             "mode": mode,
@@ -332,20 +403,121 @@ class DiagnosticsBroker:
             "dropped_events": buffer.dropped_events,
         }
 
+    def event_metadata(self, event: dict) -> dict:
+        params = event.get("params", {})
+        request_id = str(params.get("requestId", ""))
+        metadata = dict(self._request_metadata.get(request_id, {}))
+        request = params.get("request", {})
+        response = params.get("response", {})
+        metadata.update(
+            {
+                "request_id": request_id,
+                "url": str(
+                    request.get("url", "")
+                    or response.get("url", "")
+                    or params.get("documentURL", "")
+                    or metadata.get("url", "")
+                ),
+                "method": str(
+                    request.get("method", "") or metadata.get("method", "")
+                ).upper(),
+                "resource_type": str(
+                    params.get("type", "") or metadata.get("resource_type", "")
+                ),
+                "status": int(
+                    response.get("status", 0)
+                    or params.get("statusCode", 0)
+                    or metadata.get("status", 0)
+                    or 0
+                ),
+            }
+        )
+        return metadata
 
-def _event_url(event: dict) -> str:
+    def matching_network_events(self, driver, cursor: int, filters: dict) -> list[dict]:
+        """Return unconsumed matching response events for route-aware waits."""
+        self.drain_network(driver)
+        normalized = normalize_network_filters(filters)
+        matches = []
+        for event in self._network.events:
+            if event.cursor <= cursor:
+                continue
+            if event.payload.get("method") != "Network.responseReceived":
+                continue
+            metadata = self.event_metadata(event.payload)
+            if _matches_network_filters(metadata, normalized):
+                matches.append(
+                    {
+                        "cursor": event.cursor,
+                        "timestamp": event.timestamp,
+                        "event": event.payload,
+                        "metadata": metadata,
+                    }
+                )
+        return matches
+
+
+def normalize_network_filters(filters: dict) -> dict:
+    if not isinstance(filters, dict):
+        raise ValueError("filters must be an object")
+    unknown = sorted(set(filters) - _NETWORK_FILTER_KEYS)
+    if unknown:
+        raise ValueError("Unsupported network filters: " + ", ".join(unknown))
+    normalized = dict(filters)
+    url_regex = normalized.get("url_regex", "")
+    if not isinstance(url_regex, str):
+        raise ValueError("filters.url_regex must be a string")
+    if url_regex:
+        re.compile(url_regex)
+    for key in ("method", "resource_type", "request_id"):
+        if key in normalized and not isinstance(normalized[key], str):
+            raise ValueError(f"filters.{key} must be a string")
+    if "status" in normalized:
+        status = normalized["status"]
+        if not isinstance(status, int) or not 100 <= status <= 599:
+            raise ValueError("filters.status must be an integer from 100 to 599")
+    normalized["method"] = normalized.get("method", "").upper()
+    normalized["resource_type"] = normalized.get("resource_type", "").lower()
+    return normalized
+
+
+def _matches_network_filters(metadata: dict, filters: dict) -> bool:
+    if filters.get("url_regex") and not re.search(
+        filters["url_regex"], metadata.get("url", "")
+    ):
+        return False
+    if filters.get("method") and filters["method"] != metadata.get("method", ""):
+        return False
+    if filters.get("resource_type") and filters["resource_type"] != str(
+        metadata.get("resource_type", "")
+    ).lower():
+        return False
+    if filters.get("request_id") and filters["request_id"] != metadata.get(
+        "request_id", ""
+    ):
+        return False
+    if filters.get("status") and filters["status"] != metadata.get("status", 0):
+        return False
+    return True
+
+
+def _event_url(event: dict, metadata: dict | None = None) -> str:
     params = event.get("params", {})
     return str(
         params.get("request", {}).get("url", "")
         or params.get("response", {}).get("url", "")
         or params.get("documentURL", "")
+        or (metadata or {}).get("url", "")
     )
 
 
-def _is_network_error(event: dict) -> bool:
+def _is_network_error(event: dict, metadata: dict | None = None) -> bool:
     if event.get("method") == "Network.loadingFailed":
         return True
-    return event.get("params", {}).get("response", {}).get("status", 0) >= 400
+    return (
+        event.get("params", {}).get("response", {}).get("status", 0)
+        or (metadata or {}).get("status", 0)
+    ) >= 400
 
 
 diagnostics_broker = DiagnosticsBroker()

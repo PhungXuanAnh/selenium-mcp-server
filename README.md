@@ -208,14 +208,28 @@ active tab but never the final tab. Serialize tab-sensitive calls.
 {"type":"xpath","value":"//button[@type='submit']"}
 {"type":"css","value":"form.login button.primary","frame":"payment-frame"}
 {"type":"fields","value":{"element_type":"input","id":"email","attribute:data-test":"login-email"}}
+{"type":"fields","value":{"element_type":"article","role":"article","accessible_name":"Assistant message"}}
 {"type":"ref","value":"el_VALUE_FROM_QUERY"}
 ```
 
-Fields combine with AND. `frame` tries iframe ID, then name. Query pages are 1-based;
+Fields combine with AND; `role` and `accessible_name` use Selenium's computed
+accessibility values. `frame` tries iframe ID, then name. For ordered nested traversal,
+use up to eight `options.scope` steps; frame steps support CSS/ID/name and shadow steps
+enter open shadow roots:
+
+```json
+{"action":"one","selector":{"type":"css","value":"button.allow"},"options":{"scope":[{"type":"frame","value":"payment-frame","by":"id"},{"type":"shadow","value":"#permission-host","by":"css"}]}}
+```
+
+XPath is supported in documents/frames; use CSS or fields inside shadow roots. Query
+pages are 1-based;
 the default sizes are 3 for `many` and 5 for `children`, with a maximum of 50. `one`
 requires exactly one match and `children` exactly one parent. Every result element has an
-opaque `element_ref`; refs re-query the DOM but are bounded and document/tab scoped, so
-query again after full navigation.
+opaque `element_ref`. Queries include hidden DOM matches and report `visible` separately.
+Refs store locator specifications, not WebElements, and re-resolve after same-document
+rerenders while the exact locator still matches one element. They expire after 1,800
+seconds and become invalid after a tab/document change, full navigation, or a zero/multiple
+current match; query again in those cases.
 
 `wait_for.condition` supports:
 
@@ -225,35 +239,68 @@ query again after full navigation.
 | `url` | `value`, optional `match="contains|equals|regex"` |
 | `element` | `selector`, `state="present|visible|enabled|hidden"` |
 | `text` | `value`, optional `selector`, `state="present|absent"` and `match` |
-| `network_idle` | optional `quiet_ms`; long-lived requests are bounded |
+| `network_idle` | optional `quiet_ms`; `options.ignore_url_regexes` excludes known polling routes |
+| `network_response` | `options.cursor`, route `filters`, and optional dotted-path `json_predicate` |
+| `all`, `any` | `options.conditions`, 1-10 bounded nested clauses with one shared deadline |
 
 For a selector-free text wait, the observed value is the complete
 `document.body.innerText`. With a selector, it is every matched element's `.text` joined
 with newline characters. Therefore `match="equals"` compares that entire exact string,
 including browser-produced whitespace and newlines; use `contains` for a fragment.
 
-`timeout` and `poll_interval` are seconds; `quiet_ms` is milliseconds. Success and
+Network-response waits peek without consuming diagnostic events. Take a baseline
+`latest_cursor` from `browser_logs`, trigger the request, then wait after that cursor:
+
+```json
+{"condition":"network_response","timeout":30,"options":{"cursor":120,"filters":{"url_regex":"/api/build(?:\\?|$)","method":"GET","resource_type":"Fetch","status":200},"json_predicate":{"partial":false}}}
+```
+
+`network_idle` ignores long-lived EventSource/WebSocket requests but normal polling creates
+fresh finite requests; declare only known polling routes in `ignore_url_regexes` or prefer
+`network_response`. `timeout` is the deadline for the complete tool call/composed wait,
+not for each poll or clause. `timeout` and `poll_interval` are seconds; `quiet_ms` is
+milliseconds. Success and
 timeout responses include elapsed time, URL, ready state, and the last observation.
 `navigate.wait_until` accepts `initiated`, `interactive`, `complete`, or `network_idle`;
 completed policies return the final URL after redirects, while `initiated` explicitly
 reports that navigation remains pending.
 
-### Interactions, style, and artifacts
+### Interactions, actionability, style, and artifacts
 
-All interaction actions require `element_ref`. Action-specific fields are:
+All actions except viewport/nested `scroll` require `element_ref`. Action-specific fields are:
 
 | Action | Additional fields |
 |---|---|
-| `click`, `clear`, `hover`, `scroll_into_view` | none |
-| `type`, `set_value` | `input_value` (`set_value` accepts empty) |
+| `inspect` | none; returns CSS/geometry/hit-test/blocker/inert/animation/scroll-ancestor diagnostics |
+| `click` | optional `options.click_mode="native|actions|javascript"`, `offset`, `stability_ms`, `observe_ms` |
+| `clear`, `hover`, `scroll_into_view` | none |
+| `type`, `set_value` | `input_value`; options for target/input mode, clear, synthetic paste input type, verification |
 | `press_key` | `key`, for example `ENTER`, `TAB`, or `ARROW_DOWN` |
 | `select_option` | `option_by="value|text|index"`, `option_value` |
 | `upload_file` | existing absolute or workspace-relative `file_path` |
+| `scroll` | optional container ref; direction/amount/start/end, `until_visible`, nested sweep and step budget in `options` |
 
-Stale, intercepted, and temporarily non-interactable operations retry within a bounded
-timeout. Results report attempts, URL before/after, final value/visibility/enabled state,
-and event dispatch. `set_value` verifies its postcondition and explicitly dispatches
-bubbling `input` and `change` events.
+Click defaults to WebDriver native click. It re-resolves the ref, centers it, waits for a
+stable actionable hit-test, and retries stale/intercepted/temporarily non-interactable
+states within the one overall timeout. Failure reports the covering element and reasons
+such as hidden, offscreen, inert, animation, or `pointer-events:none`. Actions/offset and
+DOM JavaScript click are explicit choices; JavaScript is never a silent fallback.
+
+`type` appends by default and `set_value` replaces. `target_kind="auto|form_control|contenteditable"`
+and `input_mode="auto|keyboard|dom"` support inputs, textareas, and ProseMirror-style
+contenteditable roots. DOM rich-text insertion dispatches cancelable `beforeinput`, then
+`input`/`change`; `input_type="insertFromPaste"` supplies synthetic paste semantics without
+reading or changing the system clipboard. Verification is on by default and compares
+`.value` or rendered editor text; a mismatch returns `input_postcondition_failed`.
+
+`ok=true` means the requested browser command completed and any declared postcondition
+passed. It does not assert application intent. `execution` reports the actual strategy and
+reported events; `observed` separately reports URL, target state, focus/selection, bounded
+DOM mutations, `effect_observed`, and always `application_outcome="not_asserted"`.
+
+`scroll` is server-controlled rather than a long-running page loop. It can operate on one
+container ref or scan bounded nested containers, stop when a selector/ref is truly visible
+by viewport hit-test, and use `direction="both"` for a down-then-up sweep.
 
 `get_element_style(element_ref, ...)` requires one ref. `return_html=true` returns only
 bounded inner/outer HTML and overrides the style flags. Otherwise `all_styles` and
@@ -271,13 +318,16 @@ Console/network log calls accept `mode="peek|consume"`, `cursor`, `limit` (1-100
 `since_timestamp` (epoch milliseconds). `peek` preserves returned entries; `consume`
 removes them. Continue with `next_cursor`. Buffers and cursors are browser-session local
 and bounded. Console levels are blank/`ALL`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, or
-`SEVERE` (`ERROR` aliases Chrome `SEVERE`). Network filtering uses URL text or error
-status. Redaction is on by default for credentials, sensitive query values, and request
+`SEVERE` (`ERROR` aliases Chrome `SEVERE`). Network `filters` support URL regex, HTTP
+method, resource type, request ID, and status in addition to legacy URL-text/error filters.
+Correlated metadata lets response/finished events filter on original request properties.
+Redaction is on by default for credentials, sensitive query values, and request
 body/header text; `redact=false` is an explicit sensitive-data opt-in.
 
 ```jsonl
 {"action":"console","mode":"peek","cursor":0,"limit":20,"log_level":"ERROR"}
 {"action":"network","mode":"consume","cursor":0,"limit":50,"filter_url_by_text":"/api/","redact":true}
+{"action":"network","mode":"peek","event_type":"response","filters":{"url_regex":"/api/build","method":"GET","resource_type":"Fetch","status":200},"redact":true}
 {"action":"response","request_id":"CDP_REQUEST_ID"}
 ```
 
@@ -332,6 +382,10 @@ reference, request-ID, path, URL, and expected-text placeholders with observed v
 {"condition":"element","state":"visible","selector":{"type":"css","value":"#login"},"timeout":10}
 {"condition":"text","state":"present","value":"Welcome","selector":{"type":"css","value":"main"},"match":"contains","timeout":10}
 {"condition":"network_idle","quiet_ms":500,"timeout":10}
+{"condition":"network_idle","quiet_ms":500,"timeout":10,"options":{"ignore_url_regexes":["/api/poll(?:\\?|$)"]}}
+{"condition":"network_response","timeout":30,"options":{"cursor":120,"filters":{"url_regex":"/api/build","method":"GET","status":200},"json_predicate":{"partial":false}}}
+{"condition":"all","timeout":30,"options":{"conditions":[{"condition":"element","state":"visible","selector":{"type":"css","value":"main"}},{"condition":"network_response","options":{"cursor":120,"filters":{"url_regex":"/api/build"}}}]}}
+{"condition":"any","timeout":30,"options":{"conditions":[{"condition":"text","state":"present","value":"Done"},{"condition":"url","value":"/complete"}]}}
 ```
 
 #### `query_elements`
@@ -340,19 +394,27 @@ reference, request-ID, path, URL, and expected-text placeholders with observed v
 {"action":"one","selector":{"type":"css","value":"#login"}}
 {"action":"many","selector":{"type":"fields","value":{"element_type":"button"}},"page":1,"page_size":10}
 {"action":"children","selector":{"type":"ref","value":"el_PARENT_FROM_QUERY"},"page":1,"page_size":10}
+{"action":"one","selector":{"type":"fields","value":{"element_type":"article","role":"article","accessible_name":"Assistant message"}}}
+{"action":"one","selector":{"type":"css","value":"button.allow"},"options":{"scope":[{"type":"frame","value":"app-frame","by":"id"},{"type":"shadow","value":"#gate-host"}]}}
 ```
 
 #### `interact_element`
 
 ```jsonl
+{"action":"inspect","element_ref":"el_FROM_QUERY"}
 {"action":"click","element_ref":"el_FROM_QUERY"}
+{"action":"click","element_ref":"el_FROM_QUERY","options":{"click_mode":"actions","offset":{"x":0,"y":0},"stability_ms":100}}
+{"action":"click","element_ref":"el_FROM_QUERY","options":{"click_mode":"javascript"}}
 {"action":"clear","element_ref":"el_FROM_QUERY"}
 {"action":"type","element_ref":"el_FROM_QUERY","input_value":"hello"}
 {"action":"set_value","element_ref":"el_FROM_QUERY","input_value":"hello"}
+{"action":"set_value","element_ref":"el_FROM_QUERY","input_value":"hello","options":{"target_kind":"contenteditable","input_mode":"auto","clear_existing":true,"verify_after_input":true}}
 {"action":"press_key","element_ref":"el_FROM_QUERY","key":"ENTER"}
 {"action":"select_option","element_ref":"el_FROM_QUERY","option_by":"value","option_value":"active"}
 {"action":"hover","element_ref":"el_FROM_QUERY"}
 {"action":"scroll_into_view","element_ref":"el_FROM_QUERY"}
+{"action":"scroll","element_ref":"el_SCROLL_CONTAINER","timeout":10,"options":{"direction":"down","amount":400,"until_visible":{"type":"ref","value":"el_TARGET"},"max_steps":20}}
+{"action":"scroll","timeout":10,"options":{"direction":"both","amount":500,"until_visible":{"type":"css","value":"button.allow"},"include_nested_scroll_containers":true,"max_steps":30}}
 {"action":"upload_file","element_ref":"el_FROM_QUERY","file_path":"/absolute/path/to/file.txt"}
 ```
 
@@ -369,6 +431,7 @@ reference, request-ID, path, URL, and expected-text placeholders with observed v
 ```jsonl
 {"action":"console","mode":"peek","cursor":0,"limit":20,"log_level":"ERROR"}
 {"action":"network","mode":"peek","cursor":0,"limit":20,"event_type":"response","filter_url_by_text":"/api/","redact":true}
+{"action":"network","mode":"peek","event_type":"response","filters":{"url_regex":"/api/build","method":"GET","resource_type":"Fetch","status":200},"redact":true}
 {"action":"response","request_id":"CDP_REQUEST_ID"}
 ```
 

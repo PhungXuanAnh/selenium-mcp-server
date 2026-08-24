@@ -11,14 +11,14 @@ default. Pass `--tool-profile legacy` only when an MCP client requires the origi
 names. The compact surface advertises no legacy aliases and maps calls as follows:
 
 - tab lifecycle → `tabs(action="list|open|switch|close", ...)`
-- console/network/response logs → `browser_logs(action="console|network|response", ...)`
+- console/network/response logs → `browser_logs(action="console|network|response", ...)`; network `filters` add URL regex/method/resource type/request ID/status while redaction remains on
 - five local-storage calls → `local_storage(action="add|read|remove|read_all|remove_all", ...)`
-- exact-one/many/children queries → `query_elements(action="one|many|children", selector={"type": "css|xpath|fields|ref", ...})`
-- query results return document-scoped `element_ref` values used by all interaction, style, and element-screenshot calls
-- interactions → `interact_element(action="click|clear|type|set_value|press_key|select_option|hover|scroll_into_view|upload_file", element_ref=..., ...)`
+- exact-one/many/children queries → `query_elements(action="one|many|children", selector={"type": "css|xpath|fields|ref", ...}, options={"scope": [...]})`; fields support role/accessibility name and scope traverses frames/open shadow roots
+- query results include hidden matches with visible state and 1,800-second document-scoped refs that re-resolve exact locators across same-document rerenders
+- interactions → `interact_element(action="inspect|scroll|click|clear|type|set_value|press_key|select_option|hover|scroll_into_view|upload_file", element_ref=..., options=...)`
 - both JavaScript calls → `run_javascript(javascript_code, capture_console=false|true)`
 - `get_style_an_element` → `get_element_style(element_ref=...)`
-- legacy readiness → `wait_for(condition="ready|url|element|text|network_idle", ...)`; navigation and screenshots add explicit wait/capture modes
+- waits → `wait_for(condition="ready|url|element|text|network_idle|network_response|all|any", ...)`; route waits use cursor/filters/JSON predicates and network idle can ignore declared polling URLs
 
 Recommended compact MCP workflow: `tabs(list) → navigate → wait_for → query_elements →
 interact_element → take_screenshot`. One active tab is shared mutable state, so serialize
@@ -27,6 +27,11 @@ and redaction on by default. `tabs(list)` reports browser versions and the contr
 download path. `capture_console=false` never reads logs; `true` returns only new entries
 while preserving older broker entries. Screenshots, uploads, downloads, response bodies,
 raw logs, localStorage, and shared tabs may contain sensitive data.
+Native click is the default and auto-scrolls/waits/retries with blocker diagnostics;
+actions/offset and JavaScript click require explicit options. Input auto-detects form versus
+contenteditable targets and verifies value/rendered text. `ok=true` means command plus any
+declared postcondition succeeded; inspect `execution` and `observed` for actual strategy and
+browser effects because application intent is never asserted.
 The README's **Complete compact action examples** section contains parser-checked JSON
 arguments for every compact action, condition, wait policy, and screenshot mode.
 

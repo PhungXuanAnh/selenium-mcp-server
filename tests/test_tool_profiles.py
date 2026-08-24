@@ -69,6 +69,7 @@ EXPECTED_COMPACT_PARAMETERS = {
         "event_type",
         "redact",
         "request_id",
+        "filters",
     ),
     "local_storage": (
         "action",
@@ -84,6 +85,7 @@ EXPECTED_COMPACT_PARAMETERS = {
         "page",
         "page_size",
         "return_html",
+        "options",
     ),
     "interact_element": (
         "action",
@@ -94,6 +96,7 @@ EXPECTED_COMPACT_PARAMETERS = {
         "option_value",
         "file_path",
         "timeout",
+        "options",
     ),
     "navigate": ("url", "wait_until", "timeout", "quiet_ms"),
     "take_screenshot": ("file_name", "directory", "mode", "element_ref"),
@@ -106,6 +109,7 @@ EXPECTED_COMPACT_PARAMETERS = {
         "timeout",
         "poll_interval",
         "quiet_ms",
+        "options",
     ),
     "get_element_style": (
         "element_ref",
@@ -167,13 +171,13 @@ class ToolProfileTests(unittest.TestCase):
         compact_by_name = {tool.name: tool for tool in compact_tools}
         guidance = {
             "tabs": ("list needs no extra field", "browser versions", "download directory"),
-            "browser_logs": ("peek or consume", "cursor pagination", "event_type", "redact=true", "response requires"),
+            "browser_logs": ("peek preserves", "consume removes", "event/cursor/time", "filters for regex/method/type/request/status", "default redaction", "response requires"),
             "local_storage": ("add requires key", "object mode wins", "read/remove require key"),
-            "query_elements": ("combine with and", "1-based pages", "stable element_ref", "exactly one"),
-            "interact_element": ("requires element_ref", "select_option", "retries stale", "event dispatch"),
+            "query_elements": ("including hidden matches", "fields support role/name", "options.scope", "ref/rerender/navigation policy"),
+            "interact_element": ("inspect diagnoses", "auto-scrolls/waits/retries", "javascript are explicit", "verified contenteditable", "scroll is bounded", "execution and observed"),
             "navigate": ("wait_until=initiated", "final_url after redirects", "timeout/error state"),
             "take_screenshot": ("mode=viewport", "element mode requires", "sensitive data"),
-            "wait_for": ("ready, url, element, text", "body.innertext", "joins matched .text", "entire exact string", "timeout diagnostics", "network events remain readable"),
+            "wait_for": ("one-deadline waits", "network_response/all/any", "polling ignores", "cursor/route/json predicates", "peeked, not consumed"),
             "get_element_style": ("requires element_ref", "return_html=true", "independently"),
             "run_javascript": ("promises are awaited", "bounded typed envelopes", "never reads logs", "preserving older"),
         }
@@ -190,9 +194,8 @@ class ToolProfileTests(unittest.TestCase):
                 "selector": {"type": "css", "value": "#x"},
             },
             "interact_element": {
-                "action": "type",
+                "action": "inspect",
                 "element_ref": "el_REF",
-                "input_value": "x",
             },
         }
         for tool_name, expected in expected_live_examples.items():
@@ -226,7 +229,7 @@ class ToolProfileTests(unittest.TestCase):
             "compact profile is the default",
             "--tool-profile legacy",
             '"type":"css"',
-            "document/tab scoped",
+            "tab/document change",
             'mode="peek|consume"',
             "redact=false",
             "Treat screenshots, uploads, downloads",
@@ -262,13 +265,16 @@ class ToolProfileTests(unittest.TestCase):
             ),
             "wait_for": (
                 "condition",
-                {"ready", "url", "element", "text", "network_idle"},
+                {
+                    "ready", "url", "element", "text", "network_idle",
+                    "network_response", "all", "any",
+                },
             ),
             "query_elements": ("action", {"one", "many", "children"}),
             "interact_element": (
                 "action",
                 {
-                    "click", "clear", "type", "set_value", "press_key",
+                    "inspect", "scroll", "click", "clear", "type", "set_value", "press_key",
                     "select_option", "hover", "scroll_into_view", "upload_file",
                 },
             ),

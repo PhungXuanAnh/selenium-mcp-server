@@ -32,6 +32,8 @@ from mcp_server_selenium.tools.compact import (
 class FakeElement:
     tag_name = "input"
     text = "Target"
+    aria_role = "textbox"
+    accessible_name = "Target"
 
     def __init__(self, identity="target"):
         self.identity = identity
@@ -46,6 +48,7 @@ class FakeElement:
             "innerHTML": "Target",
             "outerHTML": "<button id='target'>Target</button>",
             "value": self.value,
+            "data-test": "value",
         }.get(name, "")
 
     def is_displayed(self):
@@ -130,6 +133,7 @@ class FakeRuntimeDriver:
         self.commands = []
         self.log_reads = []
         self.log_batches = {"browser": [], "performance": []}
+        self.response_bodies = {}
         self.async_scripts = []
         self.switch_to = FakeRuntimeSwitch(self)
 
@@ -147,6 +151,8 @@ class FakeRuntimeDriver:
 
     def execute_cdp_cmd(self, command, params):
         self.commands.append((command, params))
+        if command == "Network.getResponseBody":
+            return self.response_bodies[params["requestId"]]
         if command == "Page.navigate":
             self.urls[self.active_handle] = params["url"].replace(
                 "/redirect", "/final"
@@ -164,6 +170,39 @@ class FakeRuntimeDriver:
             return self.document_origin
         if "readyState" in script:
             return self.ready_state
+        if "webdriverDisplayed" in script:
+            return {
+                "actionable": True,
+                "stable": True,
+                "reasons": [],
+                "geometry": {"x": 10, "y": 10, "width": 100, "height": 20},
+                "hit_test": {"target_hit": True, "covered_by": None},
+                "animations": [],
+                "scroll_ancestors": [],
+            }
+        if "instanceof HTMLInputElement" in script:
+            return "form_control"
+        if "new MutationObserver" in script:
+            return {
+                "focus_before": {"tag_name": "", "id": "", "role": ""},
+                "selection_length_before": 0,
+            }
+        if "record.observer.disconnect" in script:
+            return {
+                "available": True,
+                "mutation_count": 0,
+                "focus_before": {"tag_name": "", "id": "", "role": ""},
+                "focus_after": {"tag_name": "input", "id": "target", "role": ""},
+                "selection_length_before": 0,
+                "selection_length_after": 0,
+            }
+        if "const requestedContainer" in script:
+            return {
+                "scanned_nodes": 0,
+                "scan_truncated": False,
+                "containers": [{"tag_name": "document"}],
+                "changed": 1,
+            }
         if "innerText" in script:
             return self.body_text
         if "document.styleSheets" in script:
@@ -273,6 +312,14 @@ class FakeActions:
 
     def move_to_element(self, element):
         element.calls.append(("hover", None))
+        return self
+
+    def move_to_element_with_offset(self, element, x, y):
+        element.calls.append(("move_with_offset", (x, y)))
+        return self
+
+    def click(self):
+        self.driver.elements[0].calls.append(("actions_click", None))
         return self
 
     def perform(self):
@@ -405,6 +452,82 @@ class CompactToolParityTests(unittest.TestCase):
                 network = json.loads(
                     wait_for("network_idle", timeout=0, quiet_ms=0)
                 )
+                driver.response_bodies["build-1"] = {
+                    "body": json.dumps({"partial": False}),
+                    "base64Encoded": False,
+                }
+                driver.log_batches["performance"] = [[
+                    {
+                        "timestamp": 100,
+                        "message": json.dumps({
+                            "message": {
+                                "method": "Network.requestWillBeSent",
+                                "params": {
+                                    "requestId": "build-1",
+                                    "type": "Fetch",
+                                    "request": {
+                                        "url": "https://api.test/api/build",
+                                        "method": "GET",
+                                    },
+                                },
+                            }
+                        }),
+                    },
+                    {
+                        "timestamp": 110,
+                        "message": json.dumps({
+                            "message": {
+                                "method": "Network.responseReceived",
+                                "params": {
+                                    "requestId": "build-1",
+                                    "type": "Fetch",
+                                    "response": {
+                                        "url": "https://api.test/api/build",
+                                        "status": 200,
+                                    },
+                                },
+                            }
+                        }),
+                    },
+                ]]
+                route = json.loads(
+                    wait_for(
+                        "network_response",
+                        timeout=0,
+                        options={
+                            "filters": {
+                                "url_regex": "/api/build$",
+                                "method": "GET",
+                                "status": 200,
+                            },
+                            "json_predicate": {"partial": False},
+                        },
+                    )
+                )
+                composed = json.loads(
+                    wait_for(
+                        "all",
+                        timeout=0,
+                        options={
+                            "conditions": [
+                                {"condition": "ready", "state": "complete"},
+                                {
+                                    "condition": "network_response",
+                                    "options": {
+                                        "filters": {"request_id": "build-1"}
+                                    },
+                                },
+                            ]
+                        },
+                    )
+                )
+                filtered = json.loads(
+                    browser_logs(
+                        "network",
+                        event_type="response",
+                        filters={"request_id": "build-1", "status": 200},
+                    )
+                )
                 redirected = json.loads(
                     navigate(
                         "http://local.test/redirect",
@@ -428,8 +551,17 @@ class CompactToolParityTests(unittest.TestCase):
                 server.configure_download_directory(driver)
 
                 self.assertTrue(
-                    all(item["ok"] for item in (ready, element, text, network))
+                    all(
+                        item["ok"]
+                        for item in (
+                            ready, element, text, network, route, composed, filtered
+                        )
+                    )
                 )
+                self.assertTrue(
+                    route["observation"]["json_predicate"]["partial"]["matched"]
+                )
+                self.assertEqual(1, filtered["returned"])
                 self.assertEqual("http://local.test/final", redirected["final_url"])
                 self.assertTrue(initiated["navigation_pending"])
                 self.assertTrue(timed_out["timed_out"])
@@ -473,8 +605,16 @@ class CompactToolParityTests(unittest.TestCase):
                     ),
                 ):
                     results = {
+                        "inspect": json.loads(
+                            interact_element("inspect", element_ref)
+                        ),
                         "click": json.loads(
-                            interact_element("click", element_ref, timeout=1)
+                            interact_element(
+                                "click",
+                                element_ref,
+                                timeout=1,
+                                options={"stability_ms": 0, "observe_ms": 0},
+                            )
                         ),
                         "clear": json.loads(interact_element("clear", element_ref)),
                         "type": json.loads(
@@ -500,6 +640,13 @@ class CompactToolParityTests(unittest.TestCase):
                         "scroll_into_view": json.loads(
                             interact_element("scroll_into_view", element_ref)
                         ),
+                        "scroll": json.loads(
+                            interact_element(
+                                "scroll",
+                                timeout=1,
+                                options={"max_steps": 1, "step_delay_ms": 0},
+                            )
+                        ),
                         "upload_file": json.loads(
                             interact_element(
                                 "upload_file", element_ref, file_path=upload.name
@@ -509,17 +656,28 @@ class CompactToolParityTests(unittest.TestCase):
 
         self.assertTrue(all(result["ok"] for result in results.values()))
         self.assertEqual(2, results["click"]["attempts"])
+        self.assertTrue(results["inspect"]["actionability"]["actionable"])
         self.assertEqual("set", results["set_value"]["element"]["value"])
         self.assertEqual(
-            ["input", "change"],
+            ["keyboard", "input", "change"],
             results["set_value"]["event_dispatch"]["events"],
         )
         self.assertTrue(
             all(
-                {"attempts", "url", "element", "event_dispatch"} <= result.keys()
-                for result in results.values()
+                {"attempts", "url", "element", "event_dispatch", "execution", "observed"}
+                <= result.keys()
+                for name, result in results.items()
+                if name not in {"inspect", "scroll"}
             )
         )
+        self.assertTrue(
+            all(
+                result["observed"]["application_outcome"] == "not_asserted"
+                for name, result in results.items()
+                if name != "inspect"
+            )
+        )
+        self.assertTrue(results["scroll"]["observed"]["effect_observed"])
 
     def test_artifact_style_javascript_and_response_contracts(self):
         driver = FakeRuntimeDriver()
