@@ -7,7 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [Unreleased]
 
 ### Added
-- Add a 10-tool compact surface that maps all existing browser capabilities while retaining the original 23-tool legacy profile as an explicit compatibility fallback
+- Add an 11-tool compact surface that maps all existing browser capabilities while retaining the original 24-tool legacy profile as an explicit compatibility fallback
+- Add tab-bound MP4 recording with `start|status|stop`, optional explicit `window_handle` selection, screenshot-style `file_name` plus `directory` destinations, atomic artifacts, and an optional synthetic dynamic URL header
+- Add bounded `max_duration_seconds` auto-finalization with cleanup/deadline/elapsed/remaining metadata and manual, deadline, or shutdown stop reasons
+- Add `window_handles` follow-active recording for 2-4 tabs, producing one chronological MP4 that switches source with the tab tools and retains status, deadline, shutdown, cleanup, and close protection
+- Prefer native Chrome MP4 recording and fall back to tab-bound screencast frames encoded by ffmpeg on Chrome builds without the recent native command
 - Add profile/schema budgets, old-to-new mapping parity tests, and real MCP stdio coverage for both profiles
 - Add compact condition waits, explicit navigation policies, document-scoped element references, nine interaction actions, viewport/full-page/element screenshots, bounded diagnostics cursors, and structured async JavaScript results
 - Add a controlled `--download_dir` with runtime browser/download metadata from `tabs(action="list")`
@@ -15,7 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Add actionability inspection, controlled click strategies, verified contenteditable input, route-aware/composed network waits, bounded nested scrolling, frame/open-shadow scopes, accessibility selectors, and observed-effect evidence
 
 ### Changed
-- Make compact the default MCP tool profile; pass `--tool-profile legacy` for the original 23 tool names
+- Make compact the default MCP tool profile; pass `--tool-profile legacy` for the original 24 tool names
 - Shorten legacy tool descriptions and server instructions without changing legacy names or call contracts
 - Document the compact recommended workflow, action-specific JSON contracts, selector/reference lifecycle, timing units, style precedence, event postconditions, runtime discovery, and sensitive-data boundaries
 - Clarify that text equality compares complete body text or newline-joined matched-element text, depending on whether a selector is supplied

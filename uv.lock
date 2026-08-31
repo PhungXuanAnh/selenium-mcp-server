@@ -301,6 +301,7 @@ dependencies = [
     { name = "selenium" },
     { name = "setuptools" },
     { name = "undetected-chromedriver" },
+    { name = "websocket-client" },
 ]
 
 [package.metadata]
@@ -310,6 +311,7 @@ requires-dist = [
     { name = "selenium" },
     { name = "setuptools", specifier = ">=80.9.0" },
     { name = "undetected-chromedriver", specifier = ">=3.5.5" },
+    { name = "websocket-client", specifier = ">=1.8.0" },
 ]
 
 [package.metadata.requires-dev]

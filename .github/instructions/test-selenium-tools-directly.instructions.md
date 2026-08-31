@@ -6,8 +6,8 @@ Provide project context and coding guidelines that AI should follow when generat
 This document provides examples of how to call selenium MCP server tools directly from Python code without using the MCP protocol. This is useful for testing, debugging, or integrating the tools into other Python applications.
 
 These imports call the legacy implementation functions directly; `--tool-profile` only
-changes the Agent-visible MCP surface. MCP launches use the 10-name `compact` profile by
-default. Pass `--tool-profile legacy` only when an MCP client requires the original 23
+changes the Agent-visible MCP surface. MCP launches use the 11-name `compact` profile by
+default. Pass `--tool-profile legacy` only when an MCP client requires the original 24
 names. The compact surface advertises no legacy aliases and maps calls as follows:
 
 - tab lifecycle → `tabs(action="list|open|switch|close", ...)`
@@ -19,13 +19,18 @@ names. The compact surface advertises no legacy aliases and maps calls as follow
 - both JavaScript calls → `run_javascript(javascript_code, capture_console=false|true)`
 - `get_style_an_element` → `get_element_style(element_ref=...)`
 - waits → `wait_for(condition="ready|url|element|text|network_idle|network_response|all|any", ...)`; route waits use cursor/filters/JSON predicates and network idle can ignore declared polling URLs
+- tab video → `record_video(action="start|status|stop", file_name=..., directory=..., include_address=..., window_handle=..., max_duration_seconds=..., window_handles=...)`; start records one fixed handle, one MP4 following switches among 2-4 listed handles, or the active tab when both selectors are omitted; paths follow screenshot rules
 
 Recommended compact MCP workflow: `tabs(list) → navigate → wait_for → query_elements →
-interact_element → take_screenshot`. One active tab is shared mutable state, so serialize
+interact_element → take_screenshot`. Fixed-tab recording stays bound to its selected tab;
+multi-tab recording follows selected handles changed through `tabs(switch)`/`switch_tab`.
+Always stop immediately after the final action; its finite deadline is fallback only. When
+`plan-files` is active, keep stop plus MP4 validation as unfinished acceptance evidence until
+both pass. One active tab is shared mutable state, so serialize
 tab-sensitive calls. Compact logs use bounded per-session cursors with `peek`/`consume`
 and redaction on by default. `tabs(list)` reports browser versions and the controlled
 download path. `capture_console=false` never reads logs; `true` returns only new entries
-while preserving older broker entries. Screenshots, uploads, downloads, response bodies,
+while preserving older broker entries. Screenshots, videos, visible URLs, uploads, downloads, response bodies,
 raw logs, localStorage, and shared tabs may contain sensitive data.
 Native click is the default and auto-scrolls/waits/retries with blocker diagnostics;
 actions/offset and JavaScript click require explicit options. Input auto-detects form versus
@@ -61,6 +66,7 @@ from mcp_server_selenium.tools.logs import get_console_logs, get_network_logs
 from mcp_server_selenium.tools.style import get_style_an_element
 from mcp_server_selenium.tools.element_interaction import get_an_element, click_to_element
 from mcp_server_selenium.tools.screenshot import take_screenshot
+from mcp_server_selenium.tools.video import record_video
 ```
 
 ## Example 1: Basic Navigation and Page Ready Check
@@ -138,6 +144,32 @@ print(f"Click result: {click_result}")
 print("\n=== Taking screenshot ===")
 screenshot_result = take_screenshot("google-home")
 print(f"Screenshot result: {screenshot_result}")
+```
+
+## Example 5: Recording a Tab
+
+`start` requires separate `file_name` and `directory` arguments using the same rules as
+`take_screenshot`; `.mp4` is added when omitted and collisions get numeric suffixes.
+Pass an optional `window_handle` returned by `list_tabs()` to record one fixed open tab,
+or `window_handles` with 2-4 unique handles to produce one MP4 that follows the active
+selected tab. Switch through `tabs(action="switch")`/`switch_tab()` so the recorder marks
+each transition. The two selectors are mutually exclusive; omit both to record the active
+tab. A multi-tab base such as `checkout` still produces only `checkout.mp4`.
+`max_duration_seconds` defaults to 600 (range 0.1-86,400) and auto-finalizes forgotten
+recordings. Always call `stop` immediately after the final browser action; use `status` to
+inspect its deadline and remaining time. The final result identifies manual/deadline/shutdown
+finalization. One server owns one recording; one `stop` finalizes the flow artifact.
+Multi-tab follow-active mode requires `ffmpeg`; combined mosaic mode is unsupported.
+`include_address=true` requires `ffmpeg` and adds a synthetic dynamic URL header, not the
+real Chrome omnibox. Recording prefers the recent native command; older Chrome builds use
+a tab-bound screencast/ffmpeg fallback and return `unsupported_browser` only when neither
+transport is available.
+
+```python
+print(record_video(action="start", file_name="checkout-flow", directory="tmp/selenium-video", include_address=True, window_handles=["FIRST_HANDLE", "SECOND_HANDLE"], max_duration_seconds=900))
+# Run browser interactions while recording, then finalize the MP4.
+print(record_video("status"))
+print(record_video("stop"))
 ```
 
 ## Complete Example Script
@@ -236,6 +268,7 @@ To run these examples:
 - The tools will handle iframe switching, error handling, and driver management automatically
 - All results are returned as JSON strings that you can parse if needed
 - Prefer an absolute `directory` inside the current workspace when its path is known; otherwise screenshots default to `<workspace>/tmp/selenium-screenshot/`
+- Videos follow the same two-variable path rule and default to `<workspace>/tmp/selenium-video/`; they and visible URLs may contain sensitive data
 
 ## Common Use Cases
 

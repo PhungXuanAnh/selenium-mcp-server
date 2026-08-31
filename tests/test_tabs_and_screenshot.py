@@ -64,6 +64,12 @@ class TabAndScreenshotTests(unittest.TestCase):
         listed = json.loads(list_tabs())
         switched = json.loads(switch_tab("tab-1"))
         switch_tab(opened["handle"])
+        with patch(
+            "mcp_server_selenium.tools.tabs.recording_manager.is_recording_handle",
+            return_value=True,
+        ):
+            with self.assertRaisesRegex(ValueError, "record_video"):
+                close_tab(opened["handle"])
         closed = json.loads(close_tab())
 
         self.assertEqual("https://second.test", opened["url"])

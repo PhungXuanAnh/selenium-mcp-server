@@ -22,9 +22,14 @@ from .screenshot import (
     DEFAULT_SCREENSHOT_DIRECTORY,
 )
 from .tabs import close_tab, list_tabs, open_tab, switch_tab
+from .video_recording import (
+    DEFAULT_MAX_DURATION_SECONDS,
+    DEFAULT_VIDEO_DIRECTORY,
+    record_video_json,
+)
 
 @compact_mcp.tool(
-    description="Actions: list needs no extra field and returns tab readyState, browser versions, and download directory; open accepts optional url and activates it; switch requires a listed handle; close accepts a handle or the active tab, but never the final tab. Serialize tab-sensitive calls."
+    description="list needs no extra field; browser versions, download directory. open/switch/close change active; close never final. Serialize tab-sensitive calls."
 )
 def tabs(
     action: Literal["list", "open", "switch", "close"],
@@ -158,7 +163,7 @@ def query_elements(
     return query_json(driver, action, selector, page, page_size, return_html, options)
 
 
-@compact_mcp.tool(description='inspect diagnoses hit-test/blockers. Native click auto-scrolls/waits/retries; actions/offset/JavaScript are explicit. Input supports verified contenteditable. scroll is bounded. timeout covers the call. execution and observed never assert app intent. Example JSON: {"action":"inspect","element_ref":"el_REF"}')
+@compact_mcp.tool(description='inspect diagnoses blockers. Native click auto-scrolls/waits/retries; actions/offset/JavaScript are explicit. Input supports verified contenteditable. scroll is bounded. execution and observed do not assert intent. Example JSON: {"action":"inspect","element_ref":"el_REF"}')
 def interact_element(
     action: Literal[
         "inspect",
@@ -197,7 +202,7 @@ def interact_element(
     )
 
 
-@compact_mcp.tool(description="Navigate the active tab. wait_until=initiated returns while pending; interactive/complete wait for readyState; network_idle also waits quiet_ms after finite requests settle. timeout is seconds. Returns requested_url, final_url after redirects, ready_state, phases, and explicit timeout/error state.")
+@compact_mcp.tool(description="Navigate active tab. wait_until=initiated returns pending; interactive/complete use readyState; network_idle uses quiet_ms. timeout is seconds. Returns requested_url, final_url after redirects, phases, timeout/error state.")
 def navigate(
     url: str,
     wait_until: Literal["initiated", "interactive", "complete", "network_idle"] = "complete",
@@ -209,7 +214,7 @@ def navigate(
     return navigate_json(driver, url, wait_until, timeout, quiet_ms)
 
 
-@compact_mcp.tool(description="Capture mode=viewport, full_page, or element. Element mode requires element_ref from query_elements. file_name is a safe PNG basename; collisions get numeric suffixes. directory may be absolute or workspace-relative without traversal. Captures can contain sensitive data.")
+@compact_mcp.tool(description="mode=viewport/full_page/element; element mode requires element_ref. Safe PNG names; collision suffixes. directory absolute/workspace-relative, no traversal. May contain sensitive data.")
 def take_screenshot(
     file_name: str,
     directory: str = DEFAULT_SCREENSHOT_DIRECTORY,
@@ -219,6 +224,30 @@ def take_screenshot(
     """Capture a bounded browser artifact with safe naming."""
     return screenshot_json(
         ensure_driver_initialized(), file_name, directory, mode, element_ref
+    )
+
+
+@compact_mcp.tool(description="start requires file_name; window_handle fixed; window_handles 2-4 tabs, one MP4 follows active tab via tabs(switch); directory/include_address; synthetic URL header; max_duration_seconds deadline. Always stop once. Sensitive.")
+def record_video(
+    action: Literal["start", "stop", "status"],
+    file_name: str = "",
+    directory: str = DEFAULT_VIDEO_DIRECTORY,
+    include_address: bool = False,
+    window_handle: str = "",
+    max_duration_seconds: float = DEFAULT_MAX_DURATION_SECONDS,
+    window_handles: list[str] = [],
+) -> str:
+    """Record one fixed tab or one MP4 following selected active tabs."""
+    driver = ensure_driver_initialized() if action == "start" else None
+    return record_video_json(
+        driver,
+        action,
+        file_name,
+        directory,
+        include_address,
+        window_handle,
+        max_duration_seconds,
+        window_handles,
     )
 
 
@@ -252,7 +281,7 @@ def wait_for(
     )
 
 
-@compact_mcp.tool(description="Requires element_ref from query_elements. return_html=true returns bounded inner/outer HTML only and overrides both style flags. Otherwise all_styles and computed_style independently add bounded applied-rule and computed-property sections; both false returns element metadata only.")
+@compact_mcp.tool(description="Requires element_ref. return_html=true returns bounded HTML. Otherwise all_styles and computed_style independently add bounded rules/properties; both false returns element metadata.")
 def get_element_style(
     element_ref: str,
     return_html: bool = False,
@@ -269,7 +298,7 @@ def get_element_style(
     )
 
 
-@compact_mcp.tool(description="Execute async JavaScript in the active tab. Promises are awaited. Results use bounded typed envelopes for undefined/null, primitives, DOM elements, arrays/objects, circular/max-depth values, and exceptions. timeout is seconds. capture_console=false never reads logs; true captures only this call's new entries while preserving older broker entries.")
+@compact_mcp.tool(description="Promises are awaited. Results use bounded typed envelopes for values, DOM, circular/depth, and errors. timeout is seconds. capture_console=false never reads logs; true captures this call while preserving older entries.")
 def run_javascript(
     javascript_code: str,
     capture_console: bool = False,

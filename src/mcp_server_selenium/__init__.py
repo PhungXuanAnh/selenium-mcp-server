@@ -10,6 +10,7 @@ from .server import compact_mcp, mcp, quit_driver
 from .tools import navigate
 from .tools import tabs
 from .tools import screenshot
+from .tools import video
 from .tools import page_ready
 from .tools import logs
 from .tools import local_storage

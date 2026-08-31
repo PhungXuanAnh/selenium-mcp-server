@@ -2,6 +2,7 @@ import json
 from typing import Optional
 
 from ..server import auto_recover_stale_window, ensure_driver_initialized, mcp
+from .video_recording import recording_manager
 
 
 def _current_tab(driver) -> dict[str, object]:
@@ -65,6 +66,7 @@ def open_tab(url: Optional[str] = None) -> str:
             url = "https://" + url
         driver.get(url)
 
+    recording_manager.notify_active_handle(str(driver.current_window_handle))
     return json.dumps(_current_tab(driver), indent=2)
 
 
@@ -88,6 +90,7 @@ def switch_tab(handle: str) -> str:
         raise ValueError(f"Unknown tab handle: {handle}")
 
     driver.switch_to.window(handle)
+    recording_manager.notify_active_handle(str(driver.current_window_handle))
     return json.dumps(_current_tab(driver), indent=2)
 
 
@@ -117,6 +120,10 @@ def close_tab(handle: Optional[str] = None) -> str:
     target_handle = handle or active_handle
     if target_handle not in handles:
         raise ValueError(f"Unknown tab handle: {target_handle}")
+    if recording_manager.is_recording_handle(target_handle):
+        raise ValueError(
+            "Cannot close a recorded tab; call record_video(action='stop') once first"
+        )
 
     driver.switch_to.window(target_handle)
     driver.close()
@@ -127,6 +134,7 @@ def close_tab(handle: Optional[str] = None) -> str:
     else:
         next_handle = remaining_handles[-1]
     driver.switch_to.window(next_handle)
+    recording_manager.notify_active_handle(str(driver.current_window_handle))
 
     return json.dumps(
         {

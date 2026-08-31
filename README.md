@@ -80,6 +80,7 @@ PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/ch
 - **Element Discovery & Interaction**: Find elements by multiple criteria (text, class, ID, attributes, XPath) and interact with them through clicking and input value setting
 - **Advanced Element Querying**: Get single elements, multiple elements with pagination, and direct child nodes with comprehensive filtering options
 - **Screenshots**: Capture named PNG screenshots of the active tab in the default workspace location or an explicit output directory
+- **Tab Video Recording**: Record one fixed tab or one MP4 that follows active-tab switches across selected tabs, optionally with a synthetic URL header
 - **Element Styling**: Retrieve CSS styles and computed style information for any element
 - **JavaScript Execution**: Execute custom JavaScript code in browser console with optional console output capture
 - **Browser Logging**: Access console logs (with level filtering) and network request logs (with URL filtering and error filtering)
@@ -91,7 +92,7 @@ PYTHONPATH=src python -m mcp_server_selenium --port 9222 --user_data_dir /tmp/ch
 # 3. Available Tools
 
 The default `compact` profile is documented in [Compact Profile (Default)](#37-compact-profile-default).
-The explicit `--tool-profile legacy` compatibility fallback provides the following 23
+The explicit `--tool-profile legacy` compatibility fallback provides the following 24
 tools with their original names and call contracts.
 
 ## 3.1. Navigation and Page Management
@@ -102,6 +103,7 @@ tools with their original names and call contracts.
 - `switch_tab(handle)` - Switch to a tab using a handle returned by `list_tabs`
 - `close_tab(handle=None)` - Close a specific tab, or the active tab when no handle is provided
 - `take_screenshot(file_name, directory="tmp/selenium-screenshot")` - Take a screenshot of the active tab. A descriptive `file_name` is required; `.png` is added when omitted. When the Agent knows its current workspace path, it should prefer an absolute `directory` inside that workspace so the destination does not depend on the MCP server cwd. Otherwise, omit `directory` to use the configured workspace default. Existing files receive a numeric suffix instead of being overwritten.
+- `record_video(action, file_name="", directory="tmp/selenium-video", include_address=false, window_handle="", max_duration_seconds=600, window_handles=[])` - `start` records one fixed `window_handle`, one MP4 following switches among 2-4 `window_handles`, or the active tab when both are omitted. The selectors are mutually exclusive. Always call `stop` immediately after the final browser action; the finite deadline auto-finalizes only as a fallback. Paths follow screenshot rules and `include_address=true` adds a synthetic URL header.
 
 ## 3.2. Element Interaction
 - `get_an_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name, return_html, xpath)` - Get an element identified by various criteria
@@ -131,9 +133,9 @@ tools with their original names and call contracts.
 
 ## 3.7. Compact Profile (Default)
 
-The compact profile is the default and exposes the same browser capabilities through 10
+The compact profile is the default and exposes the same browser capabilities through 11
 tools and a smaller `tools/list` payload. It remains under evaluation; use
-`--tool-profile legacy` when an existing client still depends on the original 23 names.
+`--tool-profile legacy` when an existing client still depends on the original 24 names.
 Legacy removal, if ever planned, will be announced as a separate breaking lifecycle
 change. Legacy names are not advertised as compact aliases because aliases would keep
 their schemas in Agent context.
@@ -154,7 +156,7 @@ workflow is:
 tabs(list) -> navigate -> wait_for -> query_elements -> interact_element -> take_screenshot
 ```
 
-Use only fields relevant to an action. The 23 legacy names map to compact as follows:
+Use only fields relevant to an action. The 24 legacy names map to compact as follows:
 
 | Legacy tool | Compact call |
 |---|---|
@@ -164,6 +166,7 @@ Use only fields relevant to an action. The 23 legacy names map to compact as fol
 | `switch_tab(handle)` | `tabs(action="switch", handle=handle)` |
 | `close_tab(handle)` | `tabs(action="close", handle=handle)` |
 | `take_screenshot(file_name, directory)` | `take_screenshot(file_name, directory, mode="viewport")` |
+| `record_video(action, file_name, directory, include_address, window_handle, max_duration_seconds, window_handles)` | Same `record_video(...)` contract in both profiles |
 | `check_page_ready(wait_seconds)` | `wait_for(condition="ready", state="complete")` |
 | `get_console_logs(log_level)` | `browser_logs(action="console", log_level=log_level)` |
 | `get_network_logs(filter_url_by_text, only_errors_log)` | `browser_logs(action="network", filter_url_by_text=..., only_errors_log=...)` |
@@ -312,6 +315,53 @@ are safe PNG basenames and collisions get numeric suffixes. Directories may be a
 or workspace-relative without traversal. Chrome downloads default to
 `<workspace>/tmp/selenium-downloads`; configure them with `--download_dir`.
 
+Video recording is stateful: call `record_video(action="start", file_name=..., directory=...,
+include_address=..., window_handle=..., max_duration_seconds=..., window_handles=...)`,
+continue interacting with the browser, then always call `stop` once immediately after the
+final browser action. Pass `window_handle` for one exact fixed tab, or `window_handles` for
+2-4 unique handles returned by `tabs(action="list")`/`list_tabs()`; the active handle at
+`start` must be included in that list. The multi-tab mode publishes one MP4 and changes its
+visible source whenever `tabs(action="switch")` or `switch_tab()` activates another selected
+handle. These arguments are mutually exclusive; omit both to record the current tab. Stop
+before closing any selected tab or shutting down the session. Only one recording may run
+per server process. Names are safe MP4 basenames, the default directory is
+`<workspace>/tmp/selenium-video`, collisions get numeric suffixes, and incomplete files
+are never published.
+
+`max_duration_seconds` defaults to 600 and must be 0.1-86,400. It is a forgotten-cleanup
+fallback, not a replacement for `stop`: the server auto-finalizes at the deadline. `start`
+returns `cleanup_required` and `deadline_at`; `status` adds elapsed/remaining time; the
+final result records `stop_reason` as manual, deadline, or server shutdown.
+
+For a multi-tab start, all selected targets provide frames to one live encoder, but only the
+logically active selected tab is written to the timeline. For example, a flow that switches
+A → B → A produces one `checkout.mp4` showing those same scenes in order. Use the server's
+tab tools for switching so the recorder receives the transition; activating a tab outside
+`window_handles` freezes the video on the last selected tab until the flow returns. The
+multi-tab mode requires `ffmpeg`; combined mosaic output is not supported.
+
+`include_address=false` records tab content only. `include_address=true` uses `ffmpeg` to
+add a synthetic header containing the visible top-level URL; in follow-active mode the
+header updates with selected-tab switches and top-level navigations. It does not capture
+Chrome's real toolbar or omnibox. The native Chrome recording command is experimental and
+recent; older builds automatically use a tab-bound screencast/ffmpeg fallback.
+`unsupported_browser` is returned only when neither transport is available. The URL-header
+mode and the compatibility fallback require `ffmpeg` on `PATH`.
+
+Combined multi-tab and address-header flow in the compact profile:
+
+```jsonl
+{"tool":"tabs","arguments":{"action":"list"}}
+{"tool":"record_video","arguments":{"action":"start","file_name":"checkout-flow","directory":"/absolute/workspace/evidence","include_address":true,"window_handles":["HANDLE_A","HANDLE_B"],"max_duration_seconds":900}}
+{"tool":"tabs","arguments":{"action":"switch","handle":"HANDLE_B"}}
+{"tool":"tabs","arguments":{"action":"switch","handle":"HANDLE_A"}}
+{"tool":"record_video","arguments":{"action":"stop"}}
+```
+
+This produces one `checkout-flow.mp4` whose timeline and synthetic URL header both follow
+A → B → A. Perform the browser interactions for each tab between its switch and the next
+switch, and call `stop` immediately after the final interaction.
+
 ### Logs, JavaScript, storage, and sensitive data
 
 Console/network log calls accept `mode="peek|consume"`, `cursor`, `limit` (1-100), and
@@ -347,7 +397,7 @@ Storage `add` requires `key` plus a value or explicit empty-value flag; object m
 over string mode. `read`/`remove` require `key`; `read_all`/`remove_all` need no extra
 field. localStorage is scoped to the active page origin.
 
-Treat screenshots, uploads, downloads, response bodies, raw logs, tabs, and localStorage
+Treat screenshots, videos, visible URLs, uploads, downloads, response bodies, raw logs, tabs, and localStorage
 as potentially sensitive. They can contain credentials, PHI, or data from another origin
 in the shared session. Use explicit artifact paths and `redact=false` only when authorized.
 
@@ -426,6 +476,16 @@ reference, request-ID, path, URL, and expected-text placeholders with observed v
 {"file_name":"component","mode":"element","element_ref":"el_FROM_QUERY"}
 ```
 
+#### `record_video`
+
+```jsonl
+{"action":"start","file_name":"checkout-flow","include_address":false,"max_duration_seconds":600}
+{"action":"start","file_name":"checkout-with-url","directory":"/absolute/workspace/evidence","include_address":true,"window_handle":"HANDLE_FROM_TABS_LIST","max_duration_seconds":1800}
+{"action":"start","file_name":"checkout-tabs-with-url","directory":"/absolute/workspace/evidence","include_address":true,"window_handles":["FIRST_HANDLE","SECOND_HANDLE"],"max_duration_seconds":1800}
+{"action":"status"}
+{"action":"stop"}
+```
+
 #### `browser_logs`
 
 ```jsonl
@@ -466,6 +526,7 @@ reference, request-ID, path, URL, and expected-text placeholders with observed v
 
 - Python 3.10 or higher
 - Chrome browser installed
+- `ffmpeg` on `PATH` for `include_address=true` and for Chrome builds that need the screencast compatibility fallback
 
 ## 4.2. Installation Options
 
@@ -523,10 +584,10 @@ google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-debug
 After installing via pip/uv, you can run the server directly:
 
 ```bash
-# Basic usage with the default 10-tool compact surface
+# Basic usage with the default 11-tool compact surface
 python -m mcp_server_selenium
 
-# Use the original 23 tool names for compatibility
+# Use the original 24 tool names for compatibility
 python -m mcp_server_selenium --tool-profile legacy
 
 # With custom Chrome debugging port and user data directory
@@ -595,7 +656,7 @@ tailf /tmp/selenium-mcp.log
 
 - `--port`: Chrome remote debugging port (default: 9222)
 - `--user_data_dir`: Chrome user data directory (default: auto-generated in /tmp)
-- `--workspace_root`: Base directory for relative screenshot directories (default: the server startup directory). It is optional; absolute screenshot directories do not use it.
+- `--workspace_root`: Base directory for relative screenshot/video directories (default: the server startup directory). Absolute artifact directories do not use it.
 - `--tool-profile`: Agent-visible tool surface: `compact` (default) or `legacy` compatibility fallback
 - `--download_dir`: Chrome download directory; defaults to `<workspace_root>/tmp/selenium-downloads`
 - `-v, --verbose`: Increase verbosity (use multiple times for more details)
@@ -680,7 +741,7 @@ Alternative source code configuration using full path:
 ```
 
 Omit `--tool-profile` to use the default compact surface. Add `"--tool-profile",
-"legacy"` to a client's server `args` only when it requires the original 23 tool names.
+"legacy"` to a client's server `args` only when it requires the original 24 tool names.
 
 ### 5.3.2. Debug
 

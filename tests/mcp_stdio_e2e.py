@@ -3,6 +3,7 @@ import functools
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+import subprocess
 import struct
 import sys
 import tempfile
@@ -25,11 +26,13 @@ LEGACY_TOOLS = {
     "get_elements", "click_to_element", "set_value_to_input_element",
     "run_javascript_in_console", "run_javascript_and_get_console_output",
     "get_style_an_element",
+    "record_video",
 }
 COMPACT_TOOLS = {
     "navigate", "tabs", "take_screenshot", "wait_for",
     "browser_logs", "local_storage", "query_elements", "interact_element",
     "run_javascript", "get_element_style",
+    "record_video",
 }
 FIXTURE_HTML = """<!doctype html>
 <title>Selenium compact E2E</title>
@@ -176,6 +179,58 @@ class McpStdioE2ETest(unittest.TestCase):
             await session.call_tool(tool_name, arguments or {})
         )
 
+    @staticmethod
+    def _video_dimensions(path: Path) -> tuple[int, int]:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height",
+                "-of",
+                "json",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        )
+        stream = json.loads(result.stdout)["streams"][0]
+        return int(stream["width"]), int(stream["height"])
+
+    @staticmethod
+    def _frame_average_rgb(path: Path, seconds: float = 0.0) -> tuple[int, int, int]:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-ss",
+                str(seconds),
+                "-i",
+                str(path),
+                "-vf",
+                "scale=1:1",
+                "-frames:v",
+                "1",
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "rgb24",
+                "pipe:1",
+            ],
+            capture_output=True,
+            check=True,
+            timeout=30,
+        )
+        if len(result.stdout) != 3:
+            raise AssertionError("Expected one RGB pixel from the recorded video")
+        return tuple(result.stdout)
+
     async def _run_workflow(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
@@ -232,6 +287,7 @@ class McpStdioE2ETest(unittest.TestCase):
                             12 * 1024,
                         )
                         screenshot_schema = discovered_tools["take_screenshot"].inputSchema
+                        video_schema = discovered_tools["record_video"].inputSchema
                         screenshot_description = (
                             discovered_tools["take_screenshot"].description or ""
                         )
@@ -247,6 +303,27 @@ class McpStdioE2ETest(unittest.TestCase):
                         self.assertEqual(
                             "tmp/selenium-screenshot",
                             screenshot_schema["properties"]["directory"]["default"],
+                        )
+                        self.assertEqual(
+                            "tmp/selenium-video",
+                            video_schema["properties"]["directory"]["default"],
+                        )
+                        self.assertEqual(
+                            {"start", "status", "stop"},
+                            set(video_schema["properties"]["action"]["enum"]),
+                        )
+                        self.assertFalse(
+                            video_schema["properties"]["include_address"]["default"]
+                        )
+                        self.assertEqual(
+                            "", video_schema["properties"]["window_handle"]["default"]
+                        )
+                        self.assertEqual(
+                            [], video_schema["properties"]["window_handles"]["default"]
+                        )
+                        self.assertEqual(
+                            600.0,
+                            video_schema["properties"]["max_duration_seconds"]["default"],
                         )
                         self.assertIn(
                             "exactly one active tab context", initialization.instructions or ""
@@ -335,6 +412,7 @@ class McpStdioE2ETest(unittest.TestCase):
             upload_path.write_text("upload evidence", encoding="utf-8")
             download_path = workspace_path / "downloads"
             screenshot_directory = workspace_path / "evidence"
+            video_directory = workspace_path / "video-evidence"
 
             handler = functools.partial(
                 QuietHandler,
@@ -1409,13 +1487,106 @@ class McpStdioE2ETest(unittest.TestCase):
                         self.assertTrue(
                             all("ready_state" in tab for tab in tab_state["tabs"])
                         )
+                        red_page = await call_json(
+                            "run_javascript",
+                            {
+                                "javascript_code": (
+                                    "document.documentElement.style.background='rgb(240,20,20)';"
+                                    "document.body.style.background='rgb(240,20,20)';"
+                                    "return true"
+                                )
+                            },
+                        )
+                        self.assertTrue(red_page["ok"])
                         opened = await call_json(
                             "tabs",
                             {
                                 "action": "open",
-                                "url": "data:text/html,<title>Compact Tab</title>",
+                                "url": (
+                                    "data:text/html,<title>Compact Tab</title>"
+                                    "<style>html,body{margin:0;min-height:100%;background:rgb(20,20,240)}</style>"
+                                ),
                             },
                         )
+                        await call_json(
+                            "tabs",
+                            {"action": "switch", "handle": tab_state["active_handle"]},
+                        )
+                        video_start = await call_json(
+                            "record_video",
+                            {
+                                "action": "start",
+                                "file_name": "compact-multi-tab",
+                                "directory": str(video_directory),
+                                "include_address": False,
+                                "window_handles": [
+                                    tab_state["active_handle"],
+                                    opened["handle"],
+                                ],
+                            },
+                        )
+                        self.assertTrue(video_start["ok"], video_start)
+                        self.assertEqual("follow_active", video_start["mode"])
+                        self.assertEqual(
+                            [tab_state["active_handle"], opened["handle"]],
+                            video_start["handles"],
+                        )
+                        self.assertTrue(video_start["cleanup_required"])
+                        self.assertTrue(video_start["deadline_at"])
+                        self.assertIn("stop", video_start["next_action"])
+                        self.assertEqual(
+                            tab_state["active_handle"],
+                            (await call_json("tabs", {"action": "list"}))["active_handle"],
+                        )
+                        video_status = await call_json(
+                            "record_video", {"action": "status"}
+                        )
+                        self.assertEqual("recording", video_status["state"])
+                        self.assertTrue(video_status["cleanup_required"])
+                        self.assertEqual(
+                            tab_state["active_handle"],
+                            video_status["recording"]["active_handle"],
+                        )
+                        self.assertGreater(
+                            video_status["recording"]["remaining_seconds"], 0
+                        )
+                        await asyncio.sleep(1.0)
+                        await call_json(
+                            "tabs", {"action": "switch", "handle": opened["handle"]}
+                        )
+                        await asyncio.sleep(1.0)
+                        await call_json(
+                            "tabs",
+                            {"action": "switch", "handle": tab_state["active_handle"]},
+                        )
+                        await asyncio.sleep(1.0)
+                        video_stop = await call_json(
+                            "record_video", {"action": "stop"}
+                        )
+                        self.assertTrue(video_stop["ok"], video_stop)
+                        self.assertEqual("manual_stop", video_stop["stop_reason"])
+                        self.assertFalse(video_stop["cleanup_required"])
+                        bound_video_path = Path(video_stop["path"])
+                        self.assertEqual(
+                            "compact-multi-tab.mp4",
+                            bound_video_path.name,
+                        )
+                        self.assertTrue(bound_video_path.is_file())
+                        self.assertEqual(
+                            [tab_state["active_handle"], opened["handle"]],
+                            video_stop["handles"],
+                        )
+                        self.assertEqual(2, video_stop["switch_count"])
+                        self.assertEqual(
+                            tab_state["active_handle"],
+                            (await call_json("tabs", {"action": "list"}))["active_handle"],
+                        )
+                        red, green, blue = self._frame_average_rgb(bound_video_path, 0.5)
+                        self.assertGreater(red, blue + 80, (red, green, blue))
+                        red, green, blue = self._frame_average_rgb(bound_video_path, 1.5)
+                        self.assertGreater(blue, red + 80, (red, green, blue))
+                        red, green, blue = self._frame_average_rgb(bound_video_path, 2.5)
+                        self.assertGreater(red, blue + 80, (red, green, blue))
                         switched = await call_json(
                             "tabs",
                             {"action": "switch", "handle": tab_state["active_handle"]},
@@ -1425,6 +1596,79 @@ class McpStdioE2ETest(unittest.TestCase):
                         )
                         self.assertEqual(tab_state["active_handle"], switched["handle"])
                         self.assertNotIn(opened["handle"], closed["remaining_handles"])
+
+                        address_start = await call_json(
+                            "record_video",
+                            {
+                                "action": "start",
+                                "file_name": "compact-address",
+                                "include_address": True,
+                            },
+                        )
+                        self.assertTrue(address_start["ok"], address_start)
+                        await asyncio.sleep(0.5)
+                        self.assertTrue(
+                            (
+                                await call_json(
+                                    "navigate",
+                                    {
+                                        "url": fixture_url + "?recorded-address=1",
+                                        "wait_until": "complete",
+                                        "timeout": 10,
+                                    },
+                                )
+                            )["ok"]
+                        )
+                        await asyncio.sleep(0.8)
+                        address_stop = await call_json(
+                            "record_video", {"action": "stop"}
+                        )
+                        self.assertTrue(address_stop["ok"], address_stop)
+                        address_video_path = Path(address_stop["path"])
+                        self.assertEqual(
+                            workspace_path / "tmp/selenium-video/compact-address.mp4",
+                            address_video_path,
+                        )
+                        self.assertTrue(address_video_path.is_file())
+                        bound_size = self._video_dimensions(bound_video_path)
+                        address_size = self._video_dimensions(address_video_path)
+                        self.assertEqual(bound_size[0], address_size[0])
+                        self.assertEqual(bound_size[1] + 64, address_size[1])
+                        self.assertFalse(list(video_directory.glob(".*")))
+                        self.assertFalse(
+                            list(address_video_path.parent.glob(".*compact-address*"))
+                        )
+                        auto_start = await call_json(
+                            "record_video",
+                            {
+                                "action": "start",
+                                "file_name": "compact-auto-stop",
+                                "directory": str(video_directory),
+                                "max_duration_seconds": 1.5,
+                            },
+                        )
+                        self.assertTrue(auto_start["cleanup_required"])
+                        for _ in range(100):
+                            auto_status = await call_json(
+                                "record_video", {"action": "status"}
+                            )
+                            if auto_status["state"] == "idle":
+                                break
+                            await asyncio.sleep(0.1)
+                        self.assertEqual("idle", auto_status["state"])
+                        self.assertFalse(auto_status["cleanup_required"])
+                        auto_result = auto_status["last_result"]
+                        self.assertTrue(auto_result["ok"], auto_result)
+                        self.assertEqual(
+                            "max_duration_reached", auto_result["stop_reason"]
+                        )
+                        auto_video_path = Path(auto_result["path"])
+                        self.assertTrue(auto_video_path.is_file())
+                        self._video_dimensions(auto_video_path)
+                        self.assertFalse(list(video_directory.glob(".*")))
+                        title_ref = await query_ref(
+                            {"type": "css", "value": "#title"}
+                        )
 
                         viewport = await call_json(
                             "take_screenshot",

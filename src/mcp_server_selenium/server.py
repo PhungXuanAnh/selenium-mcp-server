@@ -90,23 +90,26 @@ driver_type: str = "normal_chromedriver"
 profile: str = "Default"
 
 MCP_INSTRUCTIONS = """
-One Selenium session has exactly one active tab context. Browser tools use it. Call
-list_tabs then switch_tab(handle) to change context; open_tab activates its new tab and
-close_tab reports the successor. Tab-sensitive calls must be serialized; use separate
-sessions for parallel work. For take_screenshot choose a semantic file_name. Prefer an
-absolute directory inside your current workspace when known; otherwise omit directory.
+One Selenium session has exactly one active tab context; browser tools must be serialized.
+Use list_tabs/switch_tab. Screenshots/videos use file_name and directory;
+prefer absolute workspace paths. record_video start accepts window_handle for one fixed tab
+or window_handles for one MP4 following 2-4 selected tabs; omit both for active. Stop
+after the final action; the finite deadline is fallback. Artifacts may contain sensitive data.
 """.strip()
 
 COMPACT_MCP_INSTRUCTIONS = """
 One browser session and its active tab are shared mutable state; serialize tab-sensitive
 calls. Recommended workflow: tabs(list) -> navigate -> wait_for -> query_elements ->
-interact_element -> take_screenshot. Element refs are document-scoped; query again after
+interact_element -> take_screenshot. record_video accepts window_handle for one fixed tab
+or window_handles for one MP4 following 2-4 selected tabs via tabs(switch). Stop after the
+final action; the finite deadline is fallback. Element refs are
+document-scoped; query again after
 navigation. browser_logs owns bounded session-local buffers: peek preserves entries,
 consume removes returned entries, and redaction is on by default. tabs(list) reports
 browser versions, current page state, and the controlled download directory. Downloads
-default under the workspace. Screenshots, uploads, response bodies, raw logs, tabs, and
-localStorage can expose sensitive or cross-origin data; use explicit paths/raw opt-ins
-only when authorized.
+default under the workspace. Screenshots, videos, visible URLs, uploads, response bodies,
+raw logs, tabs, and localStorage can expose sensitive or cross-origin data; use explicit
+paths/raw opt-ins only when authorized.
 """.strip()
 
 # Initialize FastMCP
@@ -246,6 +249,12 @@ def quit_driver():
     global driver_instance, _configured_download_session
     
     if driver_instance is not None:
+        try:
+            from .tools.video_recording import recording_manager
+
+            recording_manager.shutdown()
+        except Exception:
+            logger.exception("Failed to clean up active video recording")
         driver_instance.quit()
         driver_instance = None
         _configured_download_session = ""

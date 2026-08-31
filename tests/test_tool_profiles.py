@@ -23,6 +23,7 @@ EXPECTED_LEGACY_SIGNATURES = {
     "switch_tab": "(handle: str) -> str",
     "close_tab": "(handle: Optional[str] = None) -> str",
     "take_screenshot": "(file_name: str, directory: str = 'tmp/selenium-screenshot') -> str",
+    "record_video": "(action: Literal['start', 'stop', 'status'], file_name: str = '', directory: str = 'tmp/selenium-video', include_address: bool = False, window_handle: str = '', max_duration_seconds: float = 600.0, window_handles: list[str] = []) -> str",
     "check_page_ready": "(wait_seconds: int = 0) -> str",
     "get_console_logs": "(log_level: str = '') -> str",
     "get_network_logs": "(filter_url_by_text: str = '', only_errors_log: bool = False) -> str",
@@ -53,6 +54,7 @@ EXPECTED_COMPACT_TOOLS = {
     "interact_element",
     "run_javascript",
     "get_element_style",
+    "record_video",
 }
 
 EXPECTED_COMPACT_PARAMETERS = {
@@ -100,6 +102,10 @@ EXPECTED_COMPACT_PARAMETERS = {
     ),
     "navigate": ("url", "wait_until", "timeout", "quiet_ms"),
     "take_screenshot": ("file_name", "directory", "mode", "element_ref"),
+    "record_video": (
+        "action", "file_name", "directory", "include_address", "window_handle",
+        "max_duration_seconds", "window_handles",
+    ),
     "wait_for": (
         "condition",
         "state",
@@ -177,6 +183,7 @@ class ToolProfileTests(unittest.TestCase):
             "interact_element": ("inspect diagnoses", "auto-scrolls/waits/retries", "javascript are explicit", "verified contenteditable", "scroll is bounded", "execution and observed"),
             "navigate": ("wait_until=initiated", "final_url after redirects", "timeout/error state"),
             "take_screenshot": ("mode=viewport", "element mode requires", "sensitive data"),
+            "record_video": ("start requires file_name", "window_handle", "window_handles", "2-4 tabs", "one mp4", "follows active tab", "tabs(switch)", "directory/include_address", "synthetic url header", "max_duration_seconds", "always stop once", "sensitive"),
             "wait_for": ("one-deadline waits", "network_response/all/any", "polling ignores", "cursor/route/json predicates", "peeked, not consumed"),
             "get_element_style": ("requires element_ref", "return_html=true", "independently"),
             "run_javascript": ("promises are awaited", "bounded typed envelopes", "never reads logs", "preserving older"),
@@ -232,7 +239,7 @@ class ToolProfileTests(unittest.TestCase):
             "tab/document change",
             'mode="peek|consume"',
             "redact=false",
-            "Treat screenshots, uploads, downloads",
+            "Treat screenshots, videos, visible URLs",
             "--download_dir",
         ):
             self.assertIn(fragment, documentation)
@@ -240,7 +247,7 @@ class ToolProfileTests(unittest.TestCase):
             Path(__file__).resolve().parents[1]
             / ".github/instructions/test-selenium-tools-directly.instructions.md"
         ).read_text()
-        self.assertIn("MCP launches use the 10-name `compact` profile", agent_guidance)
+        self.assertIn("MCP launches use the 11-name `compact` profile", agent_guidance)
         self.assertIn("default. Pass `--tool-profile legacy`", agent_guidance)
         self.assertIn("--tool-profile legacy", agent_guidance)
 
@@ -279,6 +286,7 @@ class ToolProfileTests(unittest.TestCase):
                 },
             ),
             "take_screenshot": ("mode", {"viewport", "full_page", "element"}),
+            "record_video": ("action", {"start", "status", "stop"}),
             "browser_logs": ("action", {"console", "network", "response"}),
             "local_storage": (
                 "action", {"add", "read", "remove", "read_all", "remove_all"},
@@ -286,6 +294,13 @@ class ToolProfileTests(unittest.TestCase):
         }
         for tool_name, (field, values) in expected_variants.items():
             self.assertEqual(values, {item[field] for item in read_examples(tool_name)})
+        self.assertTrue(
+            any(
+                item.get("include_address") is True
+                and len(item.get("window_handles", [])) >= 2
+                for item in read_examples("record_video")
+            )
+        )
         self.assertTrue(read_examples("get_element_style"))
         self.assertTrue(read_examples("run_javascript"))
 
