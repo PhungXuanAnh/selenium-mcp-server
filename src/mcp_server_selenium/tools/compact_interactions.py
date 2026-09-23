@@ -44,7 +44,29 @@ _RETRIABLE = (
     StaleElementReferenceException,
 )
 _MAX_ATTEMPTS = 50
-_CLICK_MODES = {"native", "actions", "javascript"}
+_CLICK_MODES = {"dom", "native", "actions", "javascript"}
+# Trusted mouse presses make Chrome raise its OS window, so the default click replays
+# the pointer/mouse/focus/click sequence in the page instead.
+_DOM_CLICK_SCRIPT = """
+const element = arguments[0];
+const rect = element.getBoundingClientRect();
+const base = {
+  bubbles: true, cancelable: true, composed: true, view: window, button: 0,
+  clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2,
+};
+const pointer = {...base, pointerId: 1, pointerType: 'mouse', isPrimary: true};
+const pressed = element.dispatchEvent(new PointerEvent('pointerdown', {...pointer, buttons: 1}))
+  && element.dispatchEvent(new MouseEvent('mousedown', {...base, buttons: 1}));
+if (pressed) {
+  const focusable = element.closest(
+    'a[href],button,input,select,textarea,summary,[tabindex],[contenteditable]:not([contenteditable="false"])'
+  );
+  if (focusable) focusable.focus({preventScroll: true});
+}
+element.dispatchEvent(new PointerEvent('pointerup', {...pointer, buttons: 0}));
+element.dispatchEvent(new MouseEvent('mouseup', {...base, buttons: 0}));
+element.click();
+"""
 _CLICK_OPTION_KEYS = {"click_mode", "offset", "stability_ms", "observe_ms"}
 _INPUT_MODES = {"auto", "keyboard", "dom"}
 _TARGET_KINDS = {"auto", "form_control", "contenteditable"}
@@ -682,9 +704,11 @@ def _validate_action(
             f"Unsupported {action} options: {', '.join(unknown_options)}"
         )
     if action == "click":
-        click_mode = options.get("click_mode", "native")
+        click_mode = options.get("click_mode", "dom")
         if click_mode not in _CLICK_MODES:
-            raise ValueError("options.click_mode must be native, actions, or javascript")
+            raise ValueError(
+                "options.click_mode must be dom, native, actions, or javascript"
+            )
         stability_ms = options.get("stability_ms", 100)
         observe_ms = options.get("observe_ms", 100)
         if not isinstance(stability_ms, int) or not 0 <= stability_ms <= 2000:
@@ -742,6 +766,11 @@ def _validate_action(
     return None
 
 
+def dom_click(driver, element) -> None:
+    """Click through page events, without the trusted press that raises Chrome."""
+    driver.execute_script(_DOM_CLICK_SCRIPT, element)
+
+
 def _perform(
     driver,
     element,
@@ -759,9 +788,11 @@ def _perform(
             element,
         )
     if action == "click":
-        click_mode = options.get("click_mode", "native")
+        click_mode = options.get("click_mode", "dom")
         offset = options.get("offset") or {}
-        if click_mode == "native":
+        if click_mode == "dom":
+            dom_click(driver, element)
+        elif click_mode == "native":
             element.click()
         elif click_mode == "actions":
             chain = ActionChains(driver)
@@ -901,7 +932,7 @@ def interact_result(
                         element,
                     )
                     last_actionability = inspect_actionability(driver, element)
-                    click_mode = options.get("click_mode", "native")
+                    click_mode = options.get("click_mode", "dom")
                     last_execution = {
                         "strategy": click_mode,
                         "attempted": False,

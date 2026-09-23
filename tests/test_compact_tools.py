@@ -161,6 +161,13 @@ class FakeRuntimeDriver:
             return {"frameId": "frame", "loaderId": "loader"}
         if command == "Page.getLayoutMetrics":
             return {"cssContentSize": {"width": 1200, "height": 3000}}
+        if command == "Target.getTargets":
+            return {
+                "targetInfos": [
+                    {"targetId": handle, "type": "page", "title": title, "url": self.urls[handle]}
+                    for handle, title in self.titles.items()
+                ]
+            }
         if command == "Page.captureScreenshot":
             return {"data": base64.b64encode(b"full-page-png").decode()}
         return {}
@@ -225,10 +232,6 @@ class FakeRuntimeDriver:
         self.log_reads.append(log_type)
         batches = self.log_batches.setdefault(log_type, [])
         return batches.pop(0) if batches else []
-
-    def save_screenshot(self, path):
-        Path(path).write_bytes(b"viewport-png")
-        return True
 
     def set_script_timeout(self, timeout):
         self.script_timeout = timeout
@@ -568,9 +571,10 @@ class CompactToolParityTests(unittest.TestCase):
                 self.assertEqual("loading", timed_out["ready_state"])
                 self.assertEqual("tab-2", metadata["active_handle"])
                 self.assertEqual("tab-2", driver.current_window_handle)
+                # Background tab state needs a DevTools socket the fake cannot provide.
                 self.assertEqual(
-                    ["loading", "loading"],
-                    [tab["ready_state"] for tab in metadata["tabs"]],
+                    [("First", "unknown"), ("Second", "loading")],
+                    [(tab["title"], tab["ready_state"]) for tab in metadata["tabs"]],
                 )
                 self.assertEqual("140.0", metadata["browser"]["version"])
                 self.assertEqual("140.1", metadata["browser"]["driver_version"])
@@ -613,7 +617,11 @@ class CompactToolParityTests(unittest.TestCase):
                                 "click",
                                 element_ref,
                                 timeout=1,
-                                options={"stability_ms": 0, "observe_ms": 0},
+                                options={
+                                    "click_mode": "native",
+                                    "stability_ms": 0,
+                                    "observe_ms": 0,
+                                },
                             )
                         ),
                         "clear": json.loads(interact_element("clear", element_ref)),

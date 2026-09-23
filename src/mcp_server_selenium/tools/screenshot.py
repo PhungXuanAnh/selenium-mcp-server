@@ -1,3 +1,4 @@
+import base64
 import logging
 from pathlib import Path
 import re
@@ -64,6 +65,17 @@ def _next_available_path(directory: Path, file_name: str) -> Path:
     return candidate
 
 
+def save_viewport_png(driver, path: Path) -> None:
+    """Capture the active tab's viewport without raising the Chrome window.
+
+    WebDriver's screenshot command activates the tab's OS window before capturing.
+    """
+    data = driver.execute_cdp_cmd("Page.captureScreenshot", {"format": "png"}).get("data")
+    if not data:
+        raise RuntimeError("Chrome returned an empty viewport screenshot")
+    path.write_bytes(base64.b64decode(data, validate=True))
+
+
 def prepare_screenshot_path(file_name: str, directory: str) -> Path:
     """Validate artifact inputs and reserve the next non-colliding PNG path."""
     normalized_file_name = _normalize_file_name(file_name)
@@ -102,6 +114,6 @@ def take_screenshot(
         raise RuntimeError(str(e))
     
     screenshot_path = prepare_screenshot_path(file_name, directory)
-    driver.save_screenshot(str(screenshot_path))
+    save_viewport_png(driver, screenshot_path)
 
     return f"Screenshot saved to {screenshot_path}"

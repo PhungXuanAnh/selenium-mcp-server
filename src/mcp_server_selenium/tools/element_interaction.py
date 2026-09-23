@@ -12,6 +12,7 @@ from selenium.webdriver.common.by import By
 
 # Import the global mcp instance from the main server module
 from ..server import mcp, ensure_driver_initialized, auto_recover_stale_window
+from .compact_interactions import dom_click
 
 logger = logging.getLogger(__name__)
 
@@ -834,8 +835,8 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
                 element_class = target_element.get_attribute("class") or "no-class"
                 element_text = target_element.text[:50] + "..." if len(target_element.text) > 50 else target_element.text
                 
-                # Click the target element
-                target_element.click()
+                # Click the target element without raising the Chrome window
+                dom_click(driver, target_element)
                 
                 # Wait a moment for any navigation to start
                 time.sleep(0.5)
@@ -897,8 +898,8 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
                 # get_element returned an error message, not JSON
                 return element_info
             
-            # Now click the element
-            element.click()
+            # Now click the element without raising the Chrome window
+            dom_click(driver, element)
             
             # Wait a moment for any navigation to start
             time.sleep(0.5)

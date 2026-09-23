@@ -4,7 +4,7 @@ import base64
 import json
 
 from .compact_locator import LocatorReferenceError, resolved_element
-from .screenshot import prepare_screenshot_path
+from .screenshot import prepare_screenshot_path, save_viewport_png
 
 _MODES = {"viewport", "full_page", "element"}
 _MAX_FULL_PAGE_PIXELS = 100_000_000
@@ -69,8 +69,7 @@ def screenshot_result(
     try:
         path = prepare_screenshot_path(file_name, directory)
         if mode == "viewport":
-            if driver.save_screenshot(str(path)) is False:
-                raise RuntimeError("WebDriver reported that viewport capture failed")
+            save_viewport_png(driver, path)
         elif mode == "full_page":
             _capture_full_page(driver, path)
         else:

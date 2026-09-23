@@ -20,12 +20,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 - Make compact the default MCP tool profile; pass `--tool-profile legacy` for the original 24 tool names
+- Default compact `click` and legacy `click_to_element` to an actionability-checked DOM event click that never raises the Chrome window; trusted WebDriver click remains available as `click_mode="native"`
 - Shorten legacy tool descriptions and server instructions without changing legacy names or call contracts
 - Document the compact recommended workflow, action-specific JSON contracts, selector/reference lifecycle, timing units, style precedence, event postconditions, runtime discovery, and sensitive-data boundaries
 - Clarify that text equality compares complete body text or newline-joined matched-element text, depending on whether a selector is supplied
 - Expose one concise valid JSON arguments example in each high-friction compact description for `browser_logs`, `wait_for`, and `interact_element`
 - Route compact console/performance reads through bounded session-local cursor buffers with peek/consume semantics and redaction by default; JavaScript console capture remains explicitly opt-in
-- Clarify that native click is the default, JavaScript fallback is explicit, action success does not assert application intent, and refs include hidden/rerender/navigation lifecycle metadata
+- Clarify that JavaScript fallback is explicit, action success does not assert application intent, and refs include hidden/rerender/navigation lifecycle metadata
 
 ### Fixed
 - Verify input values after Selenium entry, recover transient no-op writes, and never report set-value success when the DOM value still differs
@@ -34,6 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Stop retaining performance logs in a process-global `/tmp` history; compact network reads now use bounded pagination and preserve events drained by network-idle waits
 - Remove Chrome session and stacktrace noise from bounded response-body error envelopes
 - Prevent rich-text false success by verifying rendered content, and replace blind click retries/global polling waits with blocker diagnostics and route-specific evidence
+- Stop the controlled Chrome window from stealing desktop focus: tab listing, viewport screenshots, re-selecting the active tab, and closing background tabs no longer activate the window, and on X11 (with `xdotool`) focus returns to the user's window after Chrome-internal activations such as launch, native clicks, and opening or switching tabs; set `SELENIUM_MCP_ALLOW_FOCUS_STEAL=1` to disable the restore
 
 ## [0.1.8] - 2026-08-22
 

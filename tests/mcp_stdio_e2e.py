@@ -3,6 +3,7 @@ import functools
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+import shutil
 import subprocess
 import struct
 import sys
@@ -943,7 +944,7 @@ class McpStdioE2ETest(unittest.TestCase):
                                 "covered_by"
                             ]["id"],
                         )
-                        covered_native = await call_json(
+                        covered_default = await call_json(
                             "interact_element",
                             {
                                 "action": "click",
@@ -952,13 +953,13 @@ class McpStdioE2ETest(unittest.TestCase):
                                 "options": {"stability_ms": 0},
                             },
                         )
-                        self.assertFalse(covered_native["ok"])
-                        self.assertEqual("native", covered_native["execution"]["strategy"])
-                        self.assertFalse(covered_native["execution"]["attempted"])
+                        self.assertFalse(covered_default["ok"])
+                        self.assertEqual("dom", covered_default["execution"]["strategy"])
+                        self.assertFalse(covered_default["execution"]["attempted"])
                         self.assertIn(
-                            "covered", covered_native["actionability"]["reasons"]
+                            "covered", covered_default["actionability"]["reasons"]
                         )
-                        animated_native = await call_json(
+                        animated_default = await call_json(
                             "interact_element",
                             {
                                 "action": "click",
@@ -967,9 +968,9 @@ class McpStdioE2ETest(unittest.TestCase):
                                 "options": {"stability_ms": 0},
                             },
                         )
-                        self.assertFalse(animated_native["ok"])
+                        self.assertFalse(animated_default["ok"])
                         self.assertIn(
-                            "animating", animated_native["actionability"]["reasons"]
+                            "animating", animated_default["actionability"]["reasons"]
                         )
                         covered_javascript = await call_json(
                             "interact_element",
@@ -1745,6 +1746,201 @@ class McpStdioE2ETest(unittest.TestCase):
                 http_server.shutdown()
                 http_server.server_close()
                 http_thread.join(timeout=5)
+
+    @staticmethod
+    def _x11_active_window() -> str:
+        result = subprocess.run(
+            ["xdotool", "getactivewindow"], capture_output=True, text=True, timeout=5
+        )
+        return result.stdout.strip()
+
+    @staticmethod
+    def _x11_activate(window: str) -> None:
+        subprocess.run(
+            ["xdotool", "windowactivate", "--sync", window],
+            capture_output=True,
+            timeout=5,
+        )
+
+    async def _run_focus_workflow(self) -> None:
+        if not os.environ.get("DISPLAY") or not shutil.which("xdotool"):
+            self.skipTest("X11 focus E2E requires DISPLAY and xdotool")
+        user_window = self._x11_active_window()
+        if not user_window:
+            self.skipTest("X11 focus E2E requires an active desktop window")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            profile_path = temp_path / "chrome-profile"
+            workspace_path = temp_path / "workspace"
+            workspace_path.mkdir()
+            (workspace_path / "index.html").write_text(
+                '<!doctype html><title>Focus</title><input id="name">'
+                "<button id=\"hit\" onclick=\"this.textContent='clicked'\">Hit</button>",
+                encoding="utf-8",
+            )
+            handler = functools.partial(QuietHandler, directory=str(workspace_path))
+            http_server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            http_thread = threading.Thread(target=http_server.serve_forever, daemon=True)
+            http_thread.start()
+            page_url = f"http://127.0.0.1:{http_server.server_address[1]}/index.html"
+            browser_marker = f"--user-data-dir={profile_path}"
+            window_owners: dict[str, bool] = {}
+
+            def is_test_browser(window: str) -> bool:
+                if window not in window_owners:
+                    pid = subprocess.run(
+                        ["xdotool", "getwindowpid", window],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    ).stdout.strip()
+                    try:
+                        command = Path(f"/proc/{pid}/cmdline").read_bytes()
+                    except OSError:
+                        command = b""
+                    # Chrome rewrites argv into one space-separated process title.
+                    words = b" " + command.replace(b"\0", b" ") + b" "
+                    window_owners[window] = f" {browser_marker} ".encode() in words
+                return window_owners[window]
+
+            samples: list[str] = []
+            stop_sampling = threading.Event()
+
+            def sample_active_window() -> None:
+                while not stop_sampling.wait(0.02):
+                    samples.append(self._x11_active_window())
+
+            sampler = threading.Thread(target=sample_active_window, daemon=True)
+            sampler.start()
+            stolen: list[str] = []
+
+            async def settle(step: str, allow_flash: bool, start: int) -> None:
+                await asyncio.sleep(2.5)
+                during = [item for item in samples[start:] if item]
+                if not allow_flash and any(is_test_browser(item) for item in during):
+                    stolen.append(f"{step}: Chrome became the active window")
+                if self._x11_active_window() != user_window:
+                    stolen.append(f"{step}: focus was not returned to the user window")
+                    self._x11_activate(user_window)
+
+            environment = dict(os.environ, PYTHONPATH=str(PROJECT_ROOT / "src"))
+            environment.pop("SELENIUM_MCP_ALLOW_FOCUS_STEAL", None)
+            server = StdioServerParameters(
+                command=sys.executable,
+                args=[
+                    "-m",
+                    "mcp_server_selenium",
+                    "--user_data_dir",
+                    str(profile_path),
+                    "--workspace_root",
+                    str(workspace_path),
+                ],
+                env=environment,
+                cwd=PROJECT_ROOT,
+            )
+            try:
+                async with stdio_client(server) as (read_stream, write_stream):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        await session.initialize()
+                        await settle("launch", True, len(samples))
+
+                        async def step(name, tool, arguments, allow_flash=False):
+                            start = len(samples)
+                            result = json.loads(await self._call(session, tool, arguments))
+                            await settle(name, allow_flash, start)
+                            return result
+
+                        navigated = await step(
+                            "navigate", "navigate", {"url": page_url, "timeout": 10}
+                        )
+                        self.assertTrue(navigated["ok"], navigated)
+                        listed = await step("tabs list", "tabs", {"action": "list"})
+                        shot = await step(
+                            "screenshot", "take_screenshot", {"file_name": "focus"}
+                        )
+                        self.assertTrue(shot["ok"], shot)
+                        refs = {}
+                        for element_id in ("name", "hit"):
+                            query = await step(
+                                f"query {element_id}",
+                                "query_elements",
+                                {
+                                    "action": "one",
+                                    "selector": {"type": "css", "value": f"#{element_id}"},
+                                },
+                            )
+                            refs[element_id] = query["elements"][0]["element_ref"]
+                        typed = await step(
+                            "type",
+                            "interact_element",
+                            {
+                                "action": "type",
+                                "element_ref": refs["name"],
+                                "input_value": "background",
+                            },
+                        )
+                        self.assertTrue(typed["ok"], typed)
+                        clicked = await step(
+                            "default click",
+                            "interact_element",
+                            {"action": "click", "element_ref": refs["hit"]},
+                        )
+                        self.assertTrue(clicked["ok"], clicked)
+                        self.assertEqual("dom", clicked["execution"]["strategy"])
+                        native = await step(
+                            "native click",
+                            "interact_element",
+                            {
+                                "action": "click",
+                                "element_ref": refs["hit"],
+                                "options": {"click_mode": "native"},
+                            },
+                            allow_flash=True,
+                        )
+                        self.assertTrue(native["ok"], native)
+                        opened = await step(
+                            "tabs open",
+                            "tabs",
+                            {"action": "open", "url": page_url},
+                            allow_flash=True,
+                        )
+                        await step("tabs list 2", "tabs", {"action": "list"})
+                        await step(
+                            "tabs switch",
+                            "tabs",
+                            {"action": "switch", "handle": listed["active_handle"]},
+                            allow_flash=True,
+                        )
+                        await step(
+                            "tabs close background",
+                            "tabs",
+                            {"action": "close", "handle": opened["handle"]},
+                        )
+                        text = await step(
+                            "run_javascript",
+                            "run_javascript",
+                            {
+                                "javascript_code": (
+                                    "return document.getElementById('hit').textContent"
+                                )
+                            },
+                        )
+                        self.assertEqual("clicked", self._typed_value(text["result"]))
+                self.assertEqual([], stolen, "\n".join(stolen))
+            finally:
+                stop_sampling.set()
+                sampler.join(timeout=5)
+                NormalChromeDriver(
+                    user_data_dir=str(profile_path)
+                )._kill_chrome_with_user_data_dir()
+                http_server.shutdown()
+                http_server.server_close()
+                http_thread.join(timeout=5)
+                self._x11_activate(user_window)
+
+    def test_browser_never_keeps_focus_over_stdio(self) -> None:
+        asyncio.run(self._run_focus_workflow())
 
     def test_legacy_and_compact_profiles_over_stdio(self) -> None:
         with self.subTest(profile="legacy-explicit"):

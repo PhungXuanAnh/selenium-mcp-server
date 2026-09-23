@@ -275,7 +275,7 @@ All actions except viewport/nested `scroll` require `element_ref`. Action-specif
 | Action | Additional fields |
 |---|---|
 | `inspect` | none; returns CSS/geometry/hit-test/blocker/inert/animation/scroll-ancestor diagnostics |
-| `click` | optional `options.click_mode="native|actions|javascript"`, `offset`, `stability_ms`, `observe_ms` |
+| `click` | optional `options.click_mode="dom|native|actions|javascript"`, `offset`, `stability_ms`, `observe_ms` |
 | `clear`, `hover`, `scroll_into_view` | none |
 | `type`, `set_value` | `input_value`; options for target/input mode, clear, synthetic paste input type, verification |
 | `press_key` | `key`, for example `ENTER`, `TAB`, or `ARROW_DOWN` |
@@ -283,11 +283,15 @@ All actions except viewport/nested `scroll` require `element_ref`. Action-specif
 | `upload_file` | existing absolute or workspace-relative `file_path` |
 | `scroll` | optional container ref; direction/amount/start/end, `until_visible`, nested sweep and step budget in `options` |
 
-Click defaults to WebDriver native click. It re-resolves the ref, centers it, waits for a
-stable actionable hit-test, and retries stale/intercepted/temporarily non-interactable
-states within the one overall timeout. Failure reports the covering element and reasons
-such as hidden, offscreen, inert, animation, or `pointer-events:none`. Actions/offset and
-DOM JavaScript click are explicit choices; JavaScript is never a silent fallback.
+Click defaults to `dom`: it re-resolves the ref, centers it, waits for a stable actionable
+hit-test, and retries stale/temporarily non-interactable states within the one overall
+timeout, then dispatches `pointerdown`/`mousedown`, focus, `pointerup`/`mouseup`, and
+`click()` in the page. These events are untrusted (`isTrusted=false`), but they never make
+Chrome raise its window or take desktop focus. `native` sends a trusted WebDriver click
+(Chrome activates its window; see **Desktop focus**), `actions` adds pointer offsets, and
+`javascript` is a bare `element.click()` that skips actionability checks. Failure reports
+the covering element and reasons such as hidden, offscreen, inert, animation, or
+`pointer-events:none`. No mode is ever a silent fallback.
 
 `type` appends by default and `set_value` replaces. `target_kind="auto|form_control|contenteditable"`
 and `input_mode="auto|keyboard|dom"` support inputs, textareas, and ProseMirror-style
@@ -574,6 +578,15 @@ google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-debug
 ```
 
 2. **Auto-start Chrome**: The server can automatically start Chrome if no instance is found.
+
+**Desktop focus.** Tab listing, viewport screenshots, and closing background tabs use
+CDP calls that never raise the Chrome window. The default `dom` click never raises it either.
+Chrome itself still activates its window on launch, explicit `click_mode="native"` or
+`"actions"` mouse presses, and tab activation (open/switch/close the active tab). On Linux X11 with `xdotool` installed, the server returns focus to the window you
+were using within a fraction of a second, so Chrome may flash briefly but does not keep
+keyboard focus. The guard stays active for about 2 seconds after such a command, so
+clicking into Chrome yourself in that window is also reverted. Set
+`SELENIUM_MCP_ALLOW_FOCUS_STEAL=1` to disable this restore.
 
 # 5. Usage
 

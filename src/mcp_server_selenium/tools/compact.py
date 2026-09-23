@@ -163,7 +163,7 @@ def query_elements(
     return query_json(driver, action, selector, page, page_size, return_html, options)
 
 
-@compact_mcp.tool(description='inspect diagnoses blockers. Native click auto-scrolls/waits/retries; actions/offset/JavaScript are explicit. Input supports verified contenteditable. scroll is bounded. execution and observed do not assert intent. Example JSON: {"action":"inspect","element_ref":"el_REF"}')
+@compact_mcp.tool(description='inspect diagnoses blockers. Default dom click auto-scrolls/waits/retries without raising Chrome; native/actions/offset/JavaScript are explicit. Input supports verified contenteditable. scroll is bounded. execution and observed do not assert intent. Example JSON: {"action":"inspect","element_ref":"el_REF"}')
 def interact_element(
     action: Literal[
         "inspect",

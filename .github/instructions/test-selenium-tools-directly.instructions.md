@@ -32,8 +32,9 @@ and redaction on by default. `tabs(list)` reports browser versions and the contr
 download path. `capture_console=false` never reads logs; `true` returns only new entries
 while preserving older broker entries. Screenshots, videos, visible URLs, uploads, downloads, response bodies,
 raw logs, localStorage, and shared tabs may contain sensitive data.
-Native click is the default and auto-scrolls/waits/retries with blocker diagnostics;
-actions/offset and JavaScript click require explicit options. Input auto-detects form versus
+DOM click is the default: it auto-scrolls/waits/retries with blocker diagnostics, then
+dispatches untrusted pointer/mouse/focus/click events so Chrome never takes desktop focus;
+trusted native, actions/offset, and bare JavaScript click require explicit options. Input auto-detects form versus
 contenteditable targets and verifies value/rendered text. `ok=true` means command plus any
 declared postcondition succeeded; inspect `execution` and `observed` for actual strategy and
 browser effects because application intent is never asserted.

@@ -15,6 +15,7 @@ class FakeSwitchTo:
     def window(self, handle):
         if handle not in self.driver.handles:
             raise ValueError(handle)
+        self.driver.switches.append(handle)
         self.driver.active_handle = handle
 
     def new_window(self, window_type):
@@ -29,7 +30,19 @@ class FakeDriver:
         self.handles = ["tab-1"]
         self.active_handle = "tab-1"
         self.pages = {"tab-1": {"title": "First", "url": "https://first.test"}}
+        self.switches = []
         self.switch_to = FakeSwitchTo(self)
+
+    def execute_cdp_cmd(self, command, params):
+        if command == "Target.closeTarget":
+            self.handles.remove(params["targetId"])
+            return {"success": True}
+        return {
+            "targetInfos": [
+                {"targetId": handle, "type": "page", **page}
+                for handle, page in self.pages.items()
+            ]
+        }
 
     @property
     def window_handles(self):
@@ -63,20 +76,25 @@ class TabAndScreenshotTests(unittest.TestCase):
         opened = json.loads(open_tab("second.test"))
         listed = json.loads(list_tabs())
         switched = json.loads(switch_tab("tab-1"))
-        switch_tab(opened["handle"])
+        switch_tab("tab-1")
         with patch(
             "mcp_server_selenium.tools.tabs.recording_manager.is_recording_handle",
             return_value=True,
         ):
             with self.assertRaisesRegex(ValueError, "record_video"):
                 close_tab(opened["handle"])
-        closed = json.loads(close_tab())
+        closed = json.loads(close_tab(opened["handle"]))
 
         self.assertEqual("https://second.test", opened["url"])
-        self.assertEqual(2, len(listed["tabs"]))
+        self.assertEqual(
+            [("tab-1", "First", False), ("tab-2", "", True)],
+            [(tab["handle"], tab["title"], tab["active"]) for tab in listed["tabs"]],
+        )
         self.assertEqual("tab-1", switched["handle"])
         self.assertEqual(["tab-1"], closed["remaining_handles"])
-        self.assertEqual("tab-1", driver.current_window_handle)
+        # Listing, re-selecting the active tab, and closing a background tab never
+        # switch windows, because switching raises the Chrome window.
+        self.assertEqual(["tab-1"], driver.switches)
 
     @patch("mcp_server_selenium.tools.screenshot.get_workspace_root")
     @patch("mcp_server_selenium.tools.screenshot.ensure_driver_initialized")
@@ -87,7 +105,7 @@ class TabAndScreenshotTests(unittest.TestCase):
     ):
         driver = Mock()
         ensure_driver_initialized.return_value = driver
-        driver.save_screenshot.side_effect = lambda path: Path(path).touch()
+        driver.execute_cdp_cmd.return_value = {"data": "cG5n"}
 
         with (
             tempfile.TemporaryDirectory() as temp_dir,
@@ -96,14 +114,17 @@ class TabAndScreenshotTests(unittest.TestCase):
             workspace_root = Path(temp_dir)
             get_workspace_root.return_value = workspace_root
 
-            take_screenshot("checkout-ready")
-            take_screenshot("checkout-ready")
-            take_screenshot("details.PNG", "evidence/checkout")
-            take_screenshot("external-location", absolute_temp_dir)
+            results = [
+                take_screenshot("checkout-ready"),
+                take_screenshot("checkout-ready"),
+                take_screenshot("details.PNG", "evidence/checkout"),
+                take_screenshot("external-location", absolute_temp_dir),
+            ]
 
             saved_paths = [
-                Path(call.args[0]) for call in driver.save_screenshot.call_args_list
+                Path(result.split(" to ", 1)[1]) for result in results
             ]
+            self.assertTrue(all(path.read_bytes() == b"png" for path in saved_paths))
             self.assertEqual(
                 [
                     workspace_root / "tmp/selenium-screenshot/checkout-ready.png",

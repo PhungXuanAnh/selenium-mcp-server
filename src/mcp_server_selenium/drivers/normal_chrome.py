@@ -20,6 +20,8 @@ from selenium.common.exceptions import NoSuchWindowException, WebDriverException
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
 
+from ..focus_guard import FocusGuard, FocusGuardedChrome
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,6 +33,7 @@ class NormalChromeDriver:
         self.debug_port = 0
         self.profile = profile
         self.driver: Optional[webdriver.Chrome] = None
+        self.focus_guard = FocusGuard(lambda: self.user_data_dir)
     
     @staticmethod
     def _get_chromedriver_path() -> Optional[str]:
@@ -625,6 +628,11 @@ class NormalChromeDriver:
 
     def initialize_driver(self, custom_user_data_dir: str = "") -> webdriver.Chrome:
         """Initialize and return a WebDriver instance based on browser choice"""
+        # A freshly launched Chrome window is mapped with desktop focus.
+        with self.focus_guard.protect():
+            return self._initialize_driver(custom_user_data_dir)
+
+    def _initialize_driver(self, custom_user_data_dir: str = "") -> webdriver.Chrome:
         
         # Set user_data_dir if provided
         if custom_user_data_dir:
@@ -713,7 +721,8 @@ class NormalChromeDriver:
         service = ChromeService(executable_path=_driver_path) if _driver_path else ChromeService()
         
         # Create the driver
-        self.driver = webdriver.Chrome(service=service, options=options)
+        self.driver = FocusGuardedChrome(service=service, options=options)
+        self.driver.focus_guard = self.focus_guard
         
         # Maximize the window
         try:

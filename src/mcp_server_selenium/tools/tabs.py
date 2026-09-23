@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Optional
 
 from ..server import auto_recover_stale_window, ensure_driver_initialized, mcp
@@ -12,6 +13,24 @@ def _current_tab(driver) -> dict[str, object]:
         "title": driver.title,
         "url": driver.current_url,
     }
+
+
+def page_targets(driver) -> dict[str, dict]:
+    """Return CDP target info by handle without activating any tab.
+
+    ``switch_to.window`` makes Chrome raise its OS window, so inspection reads
+    background tabs through ``Target.getTargets`` instead.
+    """
+    infos = driver.execute_cdp_cmd("Target.getTargets", {}).get("targetInfos", [])
+    return {str(info.get("targetId")): info for info in infos}
+
+
+def _close_background_tab(driver, handle: str) -> None:
+    """Close a non-active tab without switching the driver to it first."""
+    driver.execute_cdp_cmd("Target.closeTarget", {"targetId": handle})
+    deadline = time.monotonic() + 5
+    while handle in driver.window_handles and time.monotonic() < deadline:
+        time.sleep(0.05)
 
 
 @mcp.tool(description="List all tabs and the active handle without changing the final active tab. Serialize tab-sensitive calls in this server session.")
@@ -28,17 +47,21 @@ def list_tabs() -> str:
     """
     driver = ensure_driver_initialized()
     active_handle = driver.current_window_handle
+    targets = page_targets(driver)
     tabs = []
 
-    try:
-        for handle in driver.window_handles:
-            driver.switch_to.window(handle)
+    for handle in driver.window_handles:
+        if handle == active_handle:
             tab = _current_tab(driver)
-            tab["active"] = handle == active_handle
-            tabs.append(tab)
-    finally:
-        if active_handle in driver.window_handles:
-            driver.switch_to.window(active_handle)
+        else:
+            target = targets.get(handle, {})
+            tab = {
+                "handle": handle,
+                "title": target.get("title", ""),
+                "url": target.get("url", ""),
+            }
+        tab["active"] = handle == active_handle
+        tabs.append(tab)
 
     return json.dumps({"active_handle": active_handle, "tabs": tabs}, indent=2)
 
@@ -89,7 +112,8 @@ def switch_tab(handle: str) -> str:
     if handle not in driver.window_handles:
         raise ValueError(f"Unknown tab handle: {handle}")
 
-    driver.switch_to.window(handle)
+    if handle != driver.current_window_handle:
+        driver.switch_to.window(handle)
     recording_manager.notify_active_handle(str(driver.current_window_handle))
     return json.dumps(_current_tab(driver), indent=2)
 
@@ -125,15 +149,13 @@ def close_tab(handle: Optional[str] = None) -> str:
             "Cannot close a recorded tab; call record_video(action='stop') once first"
         )
 
-    driver.switch_to.window(target_handle)
-    driver.close()
-
-    remaining_handles = list(driver.window_handles)
-    if active_handle != target_handle and active_handle in remaining_handles:
-        next_handle = active_handle
+    if target_handle != active_handle:
+        _close_background_tab(driver, target_handle)
+        remaining_handles = list(driver.window_handles)
     else:
-        next_handle = remaining_handles[-1]
-    driver.switch_to.window(next_handle)
+        driver.close()
+        remaining_handles = list(driver.window_handles)
+        driver.switch_to.window(remaining_handles[-1])
     recording_manager.notify_active_handle(str(driver.current_window_handle))
 
     return json.dumps(
