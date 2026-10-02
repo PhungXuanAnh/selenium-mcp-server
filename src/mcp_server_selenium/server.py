@@ -103,8 +103,8 @@ calls. Recommended workflow: tabs(list) -> navigate -> wait_for -> query_element
 interact_element -> take_screenshot. record_video accepts window_handle for one fixed tab
 or window_handles for one MP4 following 2-4 selected tabs via tabs(switch). Stop after the
 final action; the finite deadline is fallback. Element refs are
-document-scoped; query again after
-navigation. browser_logs owns bounded session-local buffers: peek preserves entries,
+document-scoped; query again after navigation. interact_element click defaults to
+untrusted DOM events; pass options {"click_mode":"native"} for a trusted click. browser_logs owns bounded session-local buffers: peek preserves entries,
 consume removes returned entries, and redaction is on by default. tabs(list) reports
 browser versions, current page state, and the controlled download directory. Downloads
 default under the workspace. Screenshots, videos, visible URLs, uploads, response bodies,

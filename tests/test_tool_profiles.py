@@ -180,7 +180,7 @@ class ToolProfileTests(unittest.TestCase):
             "browser_logs": ("peek preserves", "consume removes", "event/cursor/time", "filters for regex/method/type/request/status", "default redaction", "response requires"),
             "local_storage": ("add requires key", "object mode wins", "read/remove require key"),
             "query_elements": ("including hidden matches", "fields support role/name", "options.scope", "ref/rerender/navigation policy"),
-            "interact_element": ("inspect diagnoses", "auto-scrolls/waits/retries", "javascript are explicit", "verified contenteditable", "scroll is bounded", "execution and observed"),
+            "interact_element": ("options.click_mode=dom", "auto-scrolls/waits/retries", "native (trusted", "inspect diagnoses", "verifies contenteditable", "scroll is bounded", "execution/observed"),
             "navigate": ("wait_until=initiated", "final_url after redirects", "timeout/error state"),
             "take_screenshot": ("mode=viewport", "element mode requires", "sensitive data"),
             "record_video": ("start requires file_name", "window_handle", "window_handles", "2-4 tabs", "one mp4", "follows active tab", "tabs(switch)", "directory/include_address", "synthetic url header", "max_duration_seconds", "always stop once", "sensitive"),
@@ -201,8 +201,9 @@ class ToolProfileTests(unittest.TestCase):
                 "selector": {"type": "css", "value": "#x"},
             },
             "interact_element": {
-                "action": "inspect",
+                "action": "click",
                 "element_ref": "el_REF",
+                "options": {"click_mode": "native"},
             },
         }
         for tool_name, expected in expected_live_examples.items():
@@ -225,6 +226,7 @@ class ToolProfileTests(unittest.TestCase):
             "shared mutable state",
             "peek preserves entries",
             "browser versions",
+            '{"click_mode":"native"}',
             "sensitive",
         ):
             self.assertIn(fragment, COMPACT_MCP_INSTRUCTIONS)

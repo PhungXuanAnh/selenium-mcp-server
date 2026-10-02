@@ -48,7 +48,7 @@ def tabs(
     return close_tab(handle)
 
 
-@compact_mcp.tool(description='Read console/network/response evidence. peek preserves; consume removes. Network supports event/cursor/time, URL/error fields, filters for regex/method/type/request/status, and default redaction. response requires request_id. Example JSON: {"action":"network","event_type":"response"}')
+@compact_mcp.tool(description='peek preserves; consume removes. Network supports event/cursor/time, URL/error fields, filters for regex/method/type/request/status, and default redaction. response requires request_id. Example JSON: {"action":"network","event_type":"response"}')
 def browser_logs(
     action: Literal["console", "network", "response"],
     mode: Literal["consume", "peek"] = "consume",
@@ -115,7 +115,7 @@ def browser_logs(
 
 
 @compact_mcp.tool(
-    description="Actions: add requires key plus a value or explicit empty-value flag; object mode wins over string mode. read/remove require key. read_all/remove_all need no extra field. Operates on the active page's localStorage."
+    description="add requires key plus a value or explicit empty-value flag; object mode wins over string mode. read/remove require key. read_all/remove_all need no extra field. Active page only."
 )
 def local_storage(
     action: Literal["add", "read", "remove", "read_all", "remove_all"],
@@ -163,7 +163,7 @@ def query_elements(
     return query_json(driver, action, selector, page, page_size, return_html, options)
 
 
-@compact_mcp.tool(description='inspect diagnoses blockers. Default dom click auto-scrolls/waits/retries without raising Chrome; native/actions/offset/JavaScript are explicit. Input supports verified contenteditable. scroll is bounded. execution and observed do not assert intent. Example JSON: {"action":"inspect","element_ref":"el_REF"}')
+@compact_mcp.tool(description='click options.click_mode=dom (default; auto-scrolls/waits/retries, untrusted events, keeps focus)|native (trusted; use if page ignores dom)|actions (+offset)|javascript. inspect diagnoses blockers. Input verifies contenteditable; scroll is bounded; execution/observed do not assert intent. Example JSON: {"action":"click","element_ref":"el_REF","options":{"click_mode":"native"}}')
 def interact_element(
     action: Literal[
         "inspect",

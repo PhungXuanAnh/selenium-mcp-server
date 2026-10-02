@@ -457,6 +457,7 @@ reference, request-ID, path, URL, and expected-text placeholders with observed v
 ```jsonl
 {"action":"inspect","element_ref":"el_FROM_QUERY"}
 {"action":"click","element_ref":"el_FROM_QUERY"}
+{"action":"click","element_ref":"el_FROM_QUERY","options":{"click_mode":"native"}}
 {"action":"click","element_ref":"el_FROM_QUERY","options":{"click_mode":"actions","offset":{"x":0,"y":0},"stability_ms":100}}
 {"action":"click","element_ref":"el_FROM_QUERY","options":{"click_mode":"javascript"}}
 {"action":"clear","element_ref":"el_FROM_QUERY"}

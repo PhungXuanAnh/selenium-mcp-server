@@ -514,8 +514,9 @@ class McpStdioE2ETest(unittest.TestCase):
                                 "selector": {"type": "css", "value": "#x"},
                             },
                             "interact_element": {
-                                "action": "inspect",
+                                "action": "click",
                                 "element_ref": "el_REF",
+                                "options": {"click_mode": "native"},
                             },
                         }
                         for tool_name, expected in expected_live_examples.items():
