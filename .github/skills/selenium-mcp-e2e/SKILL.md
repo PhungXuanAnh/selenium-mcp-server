@@ -25,7 +25,7 @@ The test must exercise all of these layers in one run:
 - close the client/server and browser cleanly.
 
 The test owns a temporary `user_data_dir`. Do not point it at the persistent profile
-`/home/xuananh/.config/google-chrome-selenium-mcp-direct`.
+`/home/xuananh/.selenium-mcp-server-chrome-profile/direct`.
 
 ## Failure handling
 
@@ -40,5 +40,5 @@ ps -eo pid,ppid,args | rg '([m]cp_server_selenium|[c]hrome).*?/tmp/[^ ]+/chrome-
 ```
 
 No output is the expected result. Do not stop the persistent MCP server using
-`/home/xuananh/.config/google-chrome-selenium-mcp-direct`. Report the E2E command,
+`/home/xuananh/.selenium-mcp-server-chrome-profile/direct`. Report the E2E command,
 pass/fail result, and leak-check result in the handoff.

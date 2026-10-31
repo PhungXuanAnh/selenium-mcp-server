@@ -710,7 +710,7 @@ Using installed package:
       "command": "python",
       "args": [
         "-m", "mcp_server_selenium",
-        "--user_data_dir=/home/user/.config/google-chrome-selenium-mcp",
+        "--user_data_dir=/home/user/.selenium-mcp-server-chrome-profile/default",
         "--port=9225"
       ]
     }
@@ -726,7 +726,7 @@ Using source code directly:
       "command": "/path/to/selenium-mcp-server/.venv/bin/python",
       "args": [
         "-m", "mcp_server_selenium",
-        "--user_data_dir=/home/user/.config/google-chrome-selenium-mcp-source",
+        "--user_data_dir=/home/user/.selenium-mcp-server-chrome-profile/source",
         "--workspace_root=/path/to/workspace",
         "--port=9226"
       ],
@@ -746,7 +746,7 @@ Alternative source code configuration using full path:
       "command": "/path/to/selenium-mcp-server/.venv/bin/python",
       "args": [
         "/path/to/selenium-mcp-server/src/mcp_server_selenium/__main__.py",
-        "--user_data_dir=/home/user/.config/google-chrome-selenium-mcp-alt",
+        "--user_data_dir=/home/user/.selenium-mcp-server-chrome-profile/alt",
         "--port=9227"
       ]
     }
