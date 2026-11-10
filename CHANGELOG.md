@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [Unreleased]
 
 ### Added
+- On Linux X11, closing a server-launched Chrome window hides it to one shared **Selenium MCP** tray icon; the menu lists hidden windows by project, restores them, and closes a project's Chrome for good
 - Add an 11-tool compact surface that maps all existing browser capabilities while retaining the original 24-tool legacy profile as an explicit compatibility fallback
 - Add tab-bound MP4 recording with `start|status|stop`, optional explicit `window_handle` selection, screenshot-style `file_name` plus `directory` destinations, atomic artifacts, and an optional synthetic dynamic URL header
 - Add bounded `max_duration_seconds` auto-finalization with cleanup/deadline/elapsed/remaining metadata and manual, deadline, or shutdown stop reasons

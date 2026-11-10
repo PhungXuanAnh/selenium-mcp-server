@@ -20,6 +20,7 @@ from selenium.common.exceptions import NoSuchWindowException, WebDriverException
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
 
+from .. import desktop_tray
 from ..focus_guard import FocusGuard, FocusGuardedChrome
 
 logger = logging.getLogger(__name__)
@@ -437,6 +438,29 @@ class NormalChromeDriver:
                 )
         return env
 
+    def _with_close_to_tray(self, cmd: list[str]) -> tuple[list[str], dict]:
+        """Make the window close hide Chrome to the tray; Chrome still starts without it."""
+        env = self._chrome_env()
+        if not sys.platform.startswith("linux"):
+            return cmd, env
+        from mcp_server_selenium.server import get_workspace_root
+        try:
+            env = desktop_tray.prepare_chrome_env(
+                env, self.user_data_dir, self.profile, get_workspace_root()
+            )
+        except desktop_tray.TrayUnavailable as error:
+            logger.warning(f"Chrome close-to-tray is disabled: {error}")
+            return cmd, env
+        return cmd + desktop_tray.CHROME_ARGUMENTS, env
+
+    def _start_tray_daemon(self) -> None:
+        if not sys.platform.startswith("linux"):
+            return
+        try:
+            desktop_tray.start_daemon(self._chrome_env())
+        except desktop_tray.TrayUnavailable as error:
+            logger.warning(f"Selenium MCP tray icon is disabled: {error}")
+
     def _open_chrome_stderr_log(self):
         """Open a temp file to capture Chrome stderr for diagnostics on failure."""
         try:
@@ -605,13 +629,14 @@ class NormalChromeDriver:
                 "--auto-open-devtools-for-tabs"  # Auto-open DevTools for new tabs
             ]
             
+            cmd, env = self._with_close_to_tray(cmd)
             stderr_log = self._open_chrome_stderr_log()
             process = subprocess.Popen(
                 cmd, 
                 stdout=subprocess.DEVNULL, 
                 stderr=stderr_log,
                 start_new_session=True,  # Detach from the parent process
-                env=self._chrome_env(),
+                env=env,
             )
             
             # Poll for the DevTools port — Chrome may take several seconds to
@@ -683,13 +708,14 @@ class NormalChromeDriver:
                 "--auto-open-devtools-for-tabs"  # Auto-open DevTools for new tabs
             ]
             
+            cmd, env = self._with_close_to_tray(cmd)
             stderr_log = self._open_chrome_stderr_log()
             process = subprocess.Popen(
                 cmd, 
                 stdout=subprocess.DEVNULL, 
                 stderr=stderr_log,
                 start_new_session=True,  # Detach from the parent process
-                env=self._chrome_env(),
+                env=env,
             )
             
             # Poll for the DevTools port — Chrome may take several seconds to
@@ -700,6 +726,7 @@ class NormalChromeDriver:
             self._save_port()
         else:
             logger.info(f"Chrome already running with remote debugging port {self.debug_port}")
+        self._start_tray_daemon()
 
         # Ensure at least one normal page exists; otherwise chromedriver fails
         # with "unable to discover open pages" (e.g. when only extension

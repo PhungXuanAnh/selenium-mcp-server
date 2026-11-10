@@ -1,8 +1,10 @@
 import asyncio
+import fcntl
 import functools
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
+import re
 import shutil
 import subprocess
 import struct
@@ -1939,6 +1941,219 @@ class McpStdioE2ETest(unittest.TestCase):
                 http_server.server_close()
                 http_thread.join(timeout=5)
                 self._x11_activate(user_window)
+
+    @staticmethod
+    def _tray_browser_window(pid: int, title: str) -> int:
+        found = subprocess.run(
+            ["xdotool", "search", "--pid", str(pid), "--name", title],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.split()
+        for window in found:
+            role = subprocess.run(
+                ["xprop", "-id", window, "WM_WINDOW_ROLE"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout
+            if '"browser"' in role:
+                return int(window)
+        raise AssertionError(f"No browser window titled {title!r} for Chrome {pid}")
+
+    @staticmethod
+    def _x11_viewable(window: int) -> bool:
+        info = subprocess.run(
+            ["xwininfo", "-id", str(window)], capture_output=True, text=True, timeout=5
+        ).stdout
+        return "IsViewable" in info
+
+    @staticmethod
+    def _tray_daemon_running() -> bool:
+        from mcp_server_selenium.desktop_tray.native import DAEMON_LOCK
+
+        if not DAEMON_LOCK.exists():
+            return False
+        with DAEMON_LOCK.open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+            fcntl.flock(lock, fcntl.LOCK_UN)
+            return False
+
+    @staticmethod
+    def _gdbus(*arguments: str) -> str:
+        return subprocess.run(
+            ["gdbus", "call", "--session", *arguments],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        ).stdout
+
+    @classmethod
+    def _tray_menu(cls) -> tuple[str, str, dict[str, int]]:
+        """Return the Selenium MCP indicator's bus, menu path and item ids by label."""
+        registered = cls._gdbus(
+            "--dest", "org.kde.StatusNotifierWatcher",
+            "--object-path", "/StatusNotifierWatcher",
+            "--method", "org.freedesktop.DBus.Properties.Get",
+            "org.kde.StatusNotifierWatcher", "RegisteredStatusNotifierItems",
+        )
+        for item in re.findall(r"'([^']+)'", registered):
+            bus, _, item_path = item.partition("/")
+            if item_path.endswith("NotificationItem/selenium_mcp_server"):
+                menu = cls._gdbus(
+                    "--dest", bus, "--object-path", "/" + item_path,
+                    "--method", "org.freedesktop.DBus.Properties.Get",
+                    "org.kde.StatusNotifierItem", "Menu",
+                )
+                menu_path = re.search(r"'(/[^']+)'", menu).group(1)
+                layout = cls._gdbus(
+                    "--dest", bus, "--object-path", menu_path,
+                    "--method", "com.canonical.dbusmenu.GetLayout", "--", "0", "-1", "['label']",
+                )
+                labels = re.findall(r"\((\d+), \{'label': <'([^']*)'>\}", layout)
+                return bus, menu_path, {label: int(item_id) for item_id, label in labels}
+        raise AssertionError(f"Selenium MCP tray icon is not registered: {registered}")
+
+    @classmethod
+    def _tray_menu_labels(cls) -> list[str]:
+        return list(cls._tray_menu()[2])
+
+    @classmethod
+    def _click_tray_item(cls, label: str) -> None:
+        bus, menu_path, items = cls._tray_menu()
+        cls._gdbus(
+            "--dest", bus, "--object-path", menu_path,
+            "--method", "com.canonical.dbusmenu.Event", "--",
+            str(items[label]), "clicked", "<0>", "0",
+        )
+
+    @staticmethod
+    async def _eventually(check, timeout: float = 10.0) -> bool:
+        deadline = asyncio.get_running_loop().time() + timeout
+        while asyncio.get_running_loop().time() < deadline:
+            if check():
+                return True
+            await asyncio.sleep(0.2)
+        return check()
+
+    async def _run_tray_workflow(self) -> None:
+        tools = ("xdotool", "xprop", "xwininfo", "gdbus")
+        if not os.environ.get("DISPLAY") or not all(shutil.which(tool) for tool in tools):
+            self.skipTest("Tray E2E requires an X11 DISPLAY, xdotool, xprop, xwininfo and gdbus")
+        from mcp_server_selenium.desktop_tray.native import Desktop, tray_chromes
+
+        user_window = self._x11_active_window()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            profile_path = temp_path / "chrome-profile"
+            workspace_path = temp_path / "tray-project"
+            workspace_path.mkdir()
+            (workspace_path / "index.html").write_text(
+                '<!doctype html><title>Tray E2E</title><p id="state">alive</p>',
+                encoding="utf-8",
+            )
+            handler = functools.partial(QuietHandler, directory=str(workspace_path))
+            http_server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            http_thread = threading.Thread(target=http_server.serve_forever, daemon=True)
+            http_thread.start()
+            page_url = f"http://127.0.0.1:{http_server.server_address[1]}/index.html"
+            server = StdioServerParameters(
+                command=sys.executable,
+                args=[
+                    "-m",
+                    "mcp_server_selenium",
+                    "--user_data_dir",
+                    str(profile_path),
+                    "--workspace_root",
+                    str(workspace_path),
+                ],
+                env=dict(os.environ, PYTHONPATH=str(PROJECT_ROOT / "src")),
+                cwd=PROJECT_ROOT,
+            )
+            desktop = Desktop()
+
+            def hidden_windows(pid: int) -> list[int]:
+                return [item.window for item in desktop.hidden_windows() if item.pid == pid]
+
+            try:
+                async with stdio_client(server) as (read_stream, write_stream):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        await session.initialize()
+                        navigated = json.loads(
+                            await self._call(session, "navigate", {"url": page_url, "timeout": 10})
+                        )
+                        self.assertTrue(navigated["ok"], navigated)
+                        chromes = [
+                            chrome
+                            for chrome in tray_chromes()
+                            if chrome.user_data_dir == str(profile_path)
+                        ]
+                        self.assertEqual(1, len(chromes), chromes)
+                        chrome = chromes[0]
+                        self.assertEqual(str(workspace_path), chrome.project)
+                        self.assertTrue(await self._eventually(self._tray_daemon_running))
+
+                        window = self._tray_browser_window(chrome.pid, "Tray E2E")
+                        desktop.request_close(window)
+                        self.assertTrue(
+                            await self._eventually(lambda: hidden_windows(chrome.pid) == [window])
+                        )
+                        self.assertFalse(self._x11_viewable(window))
+                        hidden_label = "tray-project: Tray E2E"
+                        self.assertTrue(
+                            await self._eventually(
+                                lambda: hidden_label in self._tray_menu_labels()
+                            ),
+                            self._tray_menu_labels(),
+                        )
+
+                        state = json.loads(
+                            await self._call(
+                                session,
+                                "run_javascript",
+                                {"javascript_code": "return document.getElementById('state').textContent"},
+                            )
+                        )
+                        self.assertEqual("alive", self._typed_value(state["result"]))
+                        shot = json.loads(
+                            await self._call(session, "take_screenshot", {"file_name": "tray-hidden"})
+                        )
+                        self.assertTrue(shot["ok"], shot)
+
+                        self._click_tray_item(hidden_label)
+                        self.assertTrue(await self._eventually(lambda: self._x11_viewable(window)))
+                        self.assertEqual([], hidden_windows(chrome.pid))
+                        self.assertTrue(
+                            await self._eventually(
+                                lambda: hidden_label not in self._tray_menu_labels()
+                            )
+                        )
+
+                        self._click_tray_item("tray-project (chrome-profile)")
+                        self.assertTrue(
+                            await self._eventually(lambda: not Path(f"/proc/{chrome.pid}").exists())
+                        )
+                if not tray_chromes():
+                    self.assertTrue(
+                        await self._eventually(lambda: not self._tray_daemon_running()),
+                        "The tray daemon kept running after the last tray Chrome quit",
+                    )
+            finally:
+                NormalChromeDriver(
+                    user_data_dir=str(profile_path)
+                )._kill_chrome_with_user_data_dir()
+                http_server.shutdown()
+                http_server.server_close()
+                http_thread.join(timeout=5)
+                if user_window:
+                    self._x11_activate(user_window)
+
+    def test_window_close_hides_to_shared_tray_over_stdio(self) -> None:
+        asyncio.run(self._run_tray_workflow())
 
     def test_browser_never_keeps_focus_over_stdio(self) -> None:
         asyncio.run(self._run_focus_workflow())

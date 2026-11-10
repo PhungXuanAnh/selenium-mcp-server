@@ -589,6 +589,23 @@ keyboard focus. The guard stays active for about 2 seconds after such a command,
 clicking into Chrome yourself in that window is also reverted. Set
 `SELENIUM_MCP_ALLOW_FOCUS_STEAL=1` to disable this restore.
 
+**Close to the system tray (Linux X11).** Chrome that the server starts uses the system
+title bar, and its **X** button or **Alt+F4** hides the browser window instead of closing
+it. Tabs, logins and in-flight MCP work stay alive in the hidden window. Every project's
+server shares one **Selenium MCP** tray icon. Its menu lists only the hidden windows as
+`<project folder>: <page title>`; clicking one shows that window again. To stop a
+project's Chrome for good, pick it under **Close Chrome for good** in the same menu (labelled
+`<project folder> (<profile folder>)`), or use Chrome's menu **Exit** (Ctrl+Shift+Q). The
+icon disappears when no such Chrome runs any more.
+
+This needs `cc` and libxcb headers to build a small helper once into
+`~/.cache/selenium-mcp-server/` (`sudo apt install build-essential libxcb1-dev`), and
+`/usr/bin/python3` with GTK and Ayatana AppIndicator
+(`sudo apt install python3-gi gir1.2-ayatanaappindicator3-0.1`). The helper is preloaded
+only into Chrome launched by the server, which runs with `--ozone-platform=x11`. When
+something is missing, the server logs a warning and Chrome closes normally. An already
+running Chrome gets the behavior after it is restarted by the server.
+
 # 5. Usage
 
 ## 5.1. Running the MCP Server
