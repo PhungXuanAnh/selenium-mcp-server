@@ -86,6 +86,7 @@ class SeleniumTray:
 
 
 def main() -> int:
+    DAEMON_LOCK.parent.mkdir(parents=True, exist_ok=True)
     lock = DAEMON_LOCK.open("w")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

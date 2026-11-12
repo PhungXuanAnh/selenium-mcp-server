@@ -2044,6 +2044,7 @@ class McpStdioE2ETest(unittest.TestCase):
         tools = ("xdotool", "xprop", "xwininfo", "gdbus")
         if not os.environ.get("DISPLAY") or not all(shutil.which(tool) for tool in tools):
             self.skipTest("Tray E2E requires an X11 DISPLAY, xdotool, xprop, xwininfo and gdbus")
+        from mcp_server_selenium.desktop_tray import DAEMON, DAEMON_UNSET, SYSTEM_PYTHON
         from mcp_server_selenium.desktop_tray.native import Desktop, tray_chromes
 
         user_window = self._x11_active_window()
@@ -2096,6 +2097,26 @@ class McpStdioE2ETest(unittest.TestCase):
                         chrome = chromes[0]
                         self.assertEqual(str(workspace_path), chrome.project)
                         self.assertTrue(await self._eventually(self._tray_daemon_running))
+
+                        alternate_cache = temp_path / "cache"
+                        (alternate_cache / "selenium-mcp-server").mkdir(parents=True)
+                        for runtime_dir in (None, str(temp_path)):
+                            with self.subTest(runtime_dir=runtime_dir):
+                                daemon_env = {
+                                    key: value for key, value in os.environ.items()
+                                    if key not in DAEMON_UNSET and key != "XDG_RUNTIME_DIR"
+                                }
+                                daemon_env["XDG_CACHE_HOME"] = str(alternate_cache)
+                                if runtime_dir is not None:
+                                    daemon_env["XDG_RUNTIME_DIR"] = runtime_dir
+                                duplicate = subprocess.run(
+                                    [str(SYSTEM_PYTHON), str(DAEMON)],
+                                    env=daemon_env,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=5,
+                                )
+                                self.assertEqual(0, duplicate.returncode, duplicate.stderr)
 
                         window = self._tray_browser_window(chrome.pid, "Tray E2E")
                         desktop.request_close(window)

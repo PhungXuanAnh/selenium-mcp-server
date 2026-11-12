@@ -21,8 +21,8 @@ CACHE_DIRECTORY = (
 # Written into the Chrome user data dir; Chrome overwrites its own /proc environ.
 PROJECT_FILE = ".selenium_mcp_project"
 LIBRARY_PREFIX = "chrome-tray-"
-# Held by the single running tray daemon.
-DAEMON_LOCK = Path(os.environ.get("XDG_RUNTIME_DIR") or CACHE_DIRECTORY) / "selenium-mcp-tray.lock"
+# MCP clients may omit or override XDG directories; the per-user lock must stay shared.
+DAEMON_LOCK = Path.home() / ".cache" / "selenium-mcp-server" / "selenium-mcp-tray.lock"
 MAX_HIDDEN_WINDOWS = 256
 
 
