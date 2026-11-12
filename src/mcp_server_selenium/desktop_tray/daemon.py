@@ -4,6 +4,7 @@ Run as a script by the system Python, which provides GTK and AyatanaAppIndicator
 menu lists hidden Chrome windows by project and closes a project's Chrome for good.
 """
 
+import argparse
 import fcntl
 import signal
 import sys
@@ -86,6 +87,12 @@ class SeleniumTray:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--restore-profile", help="Show hidden Chrome windows for this profile")
+    arguments = parser.parse_args()
+    # Reconnecting a profile must restore it even when the shared daemon already runs.
+    if arguments.restore_profile:
+        Desktop().restore_profile(arguments.restore_profile)
     DAEMON_LOCK.parent.mkdir(parents=True, exist_ok=True)
     lock = DAEMON_LOCK.open("w")
     try:

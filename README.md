@@ -596,7 +596,10 @@ server shares one **Selenium MCP** tray icon. Its menu lists only the hidden win
 `<project folder>: <page title>`; clicking one shows that window again. To stop a
 project's Chrome for good, pick it under **Close Chrome for good** in the same menu (labelled
 `<project folder> (<profile folder>)`), or use Chrome's menu **Exit** (Ctrl+Shift+Q). The
-icon disappears when no such Chrome runs any more.
+icon disappears when no such Chrome runs any more. Starting or reconnecting the MCP server
+shows the hidden windows for that project's Chrome profile, including when the shared tray
+icon is already running. Chrome processes remain discoverable after a browser update, and
+the tray uses the local user's session bus when the MCP client omits its address.
 
 This needs `cc` and libxcb headers to build a small helper once into
 `~/.cache/selenium-mcp-server/` (`sudo apt install build-essential libxcb1-dev`), and

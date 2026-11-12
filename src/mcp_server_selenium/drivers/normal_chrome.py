@@ -457,7 +457,7 @@ class NormalChromeDriver:
         if not sys.platform.startswith("linux"):
             return
         try:
-            desktop_tray.start_daemon(self._chrome_env())
+            desktop_tray.start_daemon(self._chrome_env(), self.user_data_dir)
         except desktop_tray.TrayUnavailable as error:
             logger.warning(f"Selenium MCP tray icon is disabled: {error}")
 

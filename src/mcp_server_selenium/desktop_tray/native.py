@@ -110,6 +110,17 @@ class Desktop:
     def restore(self, window: int) -> bool:
         return self._checked(self._restore(window)) == 1
 
+    def restore_profile(self, user_data_dir: str) -> None:
+        """Show hidden windows belonging to the profile being connected."""
+        profile_path = Path(user_data_dir).resolve()
+        pids = {
+            chrome.pid for chrome in tray_chromes()
+            if Path(chrome.user_data_dir).resolve() == profile_path
+        }
+        for window in self.hidden_windows():
+            if window.pid in pids:
+                self.restore(window.window)
+
     def request_close(self, window: int) -> None:
         """Close a window the way its title-bar X button does."""
         self._checked(self._request_close(window))
@@ -130,7 +141,9 @@ def tray_chromes() -> List[TrayChrome]:
         if not entry.name.isdigit():
             continue
         try:
-            if Path(os.readlink(entry / "exe")).name != "chrome":
+            # Browser updates unlink the old executable while Chrome keeps running.
+            executable = os.readlink(entry / "exe").removesuffix(" (deleted)")
+            if Path(executable).name != "chrome":
                 continue
             command = (entry / "cmdline").read_bytes().replace(b"\0", b" ").decode()
             # Renderer, GPU and utility processes inherit the helper but carry --type=.

@@ -2072,7 +2072,12 @@ class McpStdioE2ETest(unittest.TestCase):
                     "--workspace_root",
                     str(workspace_path),
                 ],
-                env=dict(os.environ, PYTHONPATH=str(PROJECT_ROOT / "src")),
+                env=dict(
+                    os.environ,
+                    PYTHONPATH=str(PROJECT_ROOT / "src"),
+                    DBUS_SESSION_BUS_ADDRESS="",
+                    XDG_RUNTIME_DIR="",
+                ),
                 cwd=PROJECT_ROOT,
             )
             desktop = Desktop()
@@ -2145,6 +2150,24 @@ class McpStdioE2ETest(unittest.TestCase):
                         )
                         self.assertTrue(shot["ok"], shot)
 
+                        # A new MCP connection must show its existing hidden Chrome.
+                        async with stdio_client(server) as (restart_read, restart_write):
+                            async with ClientSession(restart_read, restart_write) as restarted:
+                                await restarted.initialize()
+                                self.assertEqual(11, len((await restarted.list_tools()).tools))
+                                self.assertTrue(
+                                    await self._eventually(lambda: self._x11_viewable(window)),
+                                    "MCP startup left its existing Chrome window hidden",
+                                )
+                                self.assertEqual([], hidden_windows(chrome.pid))
+
+                        desktop.request_close(window)
+                        self.assertTrue(
+                            await self._eventually(lambda: hidden_windows(chrome.pid) == [window])
+                        )
+                        self.assertTrue(
+                            await self._eventually(lambda: hidden_label in self._tray_menu_labels())
+                        )
                         self._click_tray_item(hidden_label)
                         self.assertTrue(await self._eventually(lambda: self._x11_viewable(window)))
                         self.assertEqual([], hidden_windows(chrome.pid))
@@ -2156,8 +2179,18 @@ class McpStdioE2ETest(unittest.TestCase):
 
                         self._click_tray_item("tray-project (chrome-profile)")
                         self.assertTrue(
-                            await self._eventually(lambda: not Path(f"/proc/{chrome.pid}").exists())
+                            await self._eventually(
+                                lambda: chrome.pid not in {item.pid for item in tray_chromes()}
+                            )
                         )
+                # The owning server can retain an exited child until its stdio session closes.
+                self.assertTrue(
+                    await self._eventually(lambda: not Path(f"/proc/{chrome.pid}").exists()),
+                    subprocess.run(
+                        ["ps", "-p", str(chrome.pid), "-o", "pid,ppid,state,args"],
+                        capture_output=True, text=True, timeout=5,
+                    ).stdout,
+                )
                 if not tray_chromes():
                     self.assertTrue(
                         await self._eventually(lambda: not self._tray_daemon_running()),

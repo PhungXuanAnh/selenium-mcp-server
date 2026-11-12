@@ -1,6 +1,7 @@
 """Close controlled Chrome to one shared Selenium MCP tray icon on Linux X11."""
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -39,15 +40,21 @@ def prepare_chrome_env(env: dict, user_data_dir: str, profile: str, project: Pat
     return {**env, "LD_PRELOAD": ":".join(item for item in preload if item)}
 
 
-def start_daemon(env: dict) -> None:
-    """Start the shared tray icon; a second daemon exits at once on the held lock."""
+def start_daemon(env: dict, user_data_dir: str = "") -> None:
+    """Show this profile's windows and start the shared tray icon if needed."""
     if not SYSTEM_PYTHON.exists():
         raise TrayUnavailable(f"{SYSTEM_PYTHON} with python3-gi is required for the tray icon")
     CACHE_DIRECTORY.mkdir(parents=True, exist_ok=True)
     daemon_env = {key: value for key, value in env.items() if key not in DAEMON_UNSET}
+    session_bus = Path(f"/run/user/{os.getuid()}/bus")
+    if not daemon_env.get("DBUS_SESSION_BUS_ADDRESS") and session_bus.is_socket():
+        daemon_env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={session_bus}"
+    command = [str(SYSTEM_PYTHON), str(DAEMON)]
+    if user_data_dir:
+        command.extend(["--restore-profile", str(Path(user_data_dir).resolve())])
     with open(CACHE_DIRECTORY / "tray-daemon.log", "ab") as log:
         subprocess.Popen(
-            [str(SYSTEM_PYTHON), str(DAEMON)],
+            command,
             cwd=DAEMON.parent,
             stdin=subprocess.DEVNULL,
             stdout=log,
